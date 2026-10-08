@@ -1,0 +1,40 @@
+name: slop-stop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/slop-stop/**'
+      - 'package-lock.json'
+      - '.github/workflows/slop-stop.yml'
+  pull_request:
+    paths:
+      - 'tools/slop-stop/**'
+      - 'package-lock.json'
+      - '.github/workflows/slop-stop.yml'
+
+concurrency:
+  group: slop-stop-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: tools/slop-stop
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+        working-directory: .
+      - run: npm run build
+      - run: npm test
+      - name: Committed action bundle matches source
+        run: npm run bundle && git diff --exit-code -- action/index.cjs
