@@ -1,0 +1,21 @@
+name: slop-stop
+description: Trusted zone check and advisory safety checks for builder PRs
+inputs:
+  mode:
+    description: check (trusted) or safety (advisory)
+    required: true
+  base-ref:
+    description: Base commit SHA
+    required: true
+  head-ref:
+    description: Head commit SHA
+    required: true
+  head-branch:
+    description: PR head branch name
+    required: true
+  pr-author:
+    description: GitHub login of PR author (required for check mode)
+    required: false
+runs:
+  using: node24
+  main: action/index.cjs

@@ -1,0 +1,14 @@
+{
+  "name": "adult-supervision",
+  "private": true,
+  "workspaces": [
+    "tools/*"
+  ],
+  "scripts": {
+    "test": "npm test -w @meet-arlo/slop-stop",
+    "build": "npm run build -w @meet-arlo/slop-stop"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

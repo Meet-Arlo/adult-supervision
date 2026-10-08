@@ -1,0 +1,26 @@
+version: 1
+builders: [demo-builder]
+owners: [demo-owner]
+target_branch: main
+deny: ['**/*.ts', '**/package*.json']
+zones:
+  - id: marketing-copy
+    name: Marketing copy
+    description: Homepage hero and subhead
+    allow: ['content/home.md']
+    safety_check: 'npm test -- --grep home'
+    escalate_to: demo-owner
+  - id: prompt-snippet
+    name: Prompt snippet
+    description: Short system prompt markdown for the demo bot
+    allow: ['prompts/assistant.md']
+    invariants:
+      - require_literal: '{{USER_NAME}}'
+      - freeze_headings: true
+    safety_check: 'npm test -- --grep prompt'
+    escalate_to: demo-owner
+  - id: unguarded-demo
+    name: Unguarded example (intentionally weak)
+    description: Shows doctor/check behavior when safety_check is missing
+    allow: ['content/experimental.md']
+    escalate_to: demo-owner
