@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import yaml from 'js-yaml';
-import { runZoneCanary } from '../src/canary.js';
 import { runCheckInRepo } from '../src/check-runner.js';
 import { parsePolicyYaml } from '../src/policy.js';
 
@@ -33,7 +32,6 @@ const policy = parsePolicyYaml(
         allow: ['content/home.md'],
         safety_check: 'node check.cjs',
         escalate_to: 'al',
-        guarded: true,
       },
     ],
   }),
@@ -58,14 +56,6 @@ afterEach(() => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-describe('canary', () => {
-  it('marks a zone guarded when safety_check passes clean and fails after the break', () => {
-    const result = runZoneCanary(repo, policy.zones[0]);
-    expect(result.message).toContain('is guarded');
-    expect(result.guarded).toBe(true);
-  });
-});
-
 describe('runCheckInRepo', () => {
   it('handles an owner PR with a diff over 1 MB', () => {
     git('checkout', '-q', '-b', 'feature/big');
@@ -75,6 +65,7 @@ describe('runCheckInRepo', () => {
     const result = runCheckInRepo({
       repoRoot: repo,
       baseRef: 'main',
+      baseBranch: 'main',
       headRef: 'HEAD',
       headBranch: 'feature/big',
       prAuthor: 'al',
@@ -87,6 +78,7 @@ describe('runCheckInRepo', () => {
       runCheckInRepo({
         repoRoot: repo,
         baseRef: '0'.repeat(40),
+        baseBranch: 'main',
         headRef: 'HEAD',
         headBranch: 'slop-stop/bea/x',
         prAuthor: 'bea',
@@ -107,6 +99,7 @@ describe('runCheckInRepo', () => {
     const result = runCheckInRepo({
       repoRoot: repo,
       baseRef: 'main',
+      baseBranch: 'main',
       headRef: 'HEAD',
       headBranch: 'slop-stop/bea/link',
       prAuthor: 'bea',

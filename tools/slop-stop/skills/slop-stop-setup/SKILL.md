@@ -63,10 +63,10 @@ For every `[FAIL]` item:
 - Give the owner the exact GitHub Settings path from the doctor output.
 - Wait for them to fix it, then re-run `doctor` until only PASS, INFO, or NOT_ENFORCEABLE remain.
 
-Call out `[NOT_ENFORCEABLE]` items (branch prefix rulesets, auto-merge): document them for the team; they are not automatic passes.
+Call out `[NOT_ENFORCEABLE]` items: document them for the team; they are not automatic passes. When target-branch items fail, walk the owner through the numbered Fix steps in the GitHub UI one at a time. Add the two required status checks last, after the slop-stop workflows are merged to the target branch, or every PR waits on checks that never run.
 
 ## Handoff to builder
 
-Tell the owner to invite each builder with **Write** access (not Admin) and share the `guarded-change` skill path.
+Tell the owner to invite each builder with **Write** access (not Admin) and share the `guarded-change` workflow doc path (`tools/slop-stop/skills/guarded-change/SKILL.md`, or wherever the team installs agent instructions).
 
-Done when `doctor` overall is PASS and policy zones show guarded canaries (or documented `accept_unguarded`).
+Done when `doctor` overall is PASS and each zone has a `safety_check` or documented `accept_unguarded`.

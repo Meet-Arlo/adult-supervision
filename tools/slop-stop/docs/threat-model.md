@@ -20,7 +20,10 @@
 
 - v1 identifies builder PRs by branch prefix `slop-stop/<builder>/*`, and the GitHub PR author login must equal `<builder>`.
 - Git commit author fields are **not** used (spoofable); the PR author comes from the GitHub event.
-- Owners should enforce branch prefix via GitHub Rulesets where available (`doctor` reports not enforceable on some tiers).
+- Builders can push to any branch except the target. The target branch needs a ruleset (or classic branch protection) that requires a PR with 1 approval including a CODEOWNER, dismisses stale approvals, blocks force pushes, and requires `slop-stop/check` and `slop-stop/safety`. Only the admin role should bypass, set to "For pull requests only". `doctor` reads both rulesets and classic protection and fails on any gap.
+- The branch prefix is a convention, not a push restriction. Anyone listed in `builders` must use `slop-stop/<login>/<slug>` or `check` fails (`builder_branch_required`), even if they are also an owner. Owners who are not builders may use any branch; zone rules are skipped on those PRs.
+- Builder PRs must target `policy.target_branch` (`wrong_merge_target` if not).
+- Known gap: `check` skips zone rules on owner-only PRs, and a builder can push commits to an owner's PR branch. A new push dismisses earlier approvals, but an owner merging with admin bypass skips approvals entirely, so owners should review the commit list before merging their own PRs.
 - `check` and `safety` live in separate workflow files, so neither event produces a skipped job with a required check's name.
 
 ## Enforced in check (builder PRs)
@@ -32,14 +35,14 @@
 - Bidirectional / zero-width Unicode in added lines
 - gitleaks (or built-in secret patterns if gitleaks missing)
 - Zone invariants and one zone per PR
-- Unguarded zones unless `accept_unguarded` is documented in policy
+- Zones with no `safety_check` (and no `accept_unguarded`) block builder PRs in `check`
 
 ## Known bypasses and mitigations
 
 1. **Malicious workflow on PR head** — A builder could edit `.github/workflows` to skip checks. **Mitigation:** trap rule blocks `.github/**` for builders; only owners merge workflow changes; pin Action tag to release.
 2. **Safety job runs PR code** — `safety_check` must be a read-only test command chosen by the owner. **Mitigation:** label advisory in doctor; do not grant secrets to the safety job.
 3. **Owner account compromise** — Out of scope; slop-stop assumes owners are trusted.
-4. **Unguarded zone** — Weak or missing tests. **Mitigation:** canary in doctor; check blocks touches to unguarded zones unless `accept_unguarded`.
+4. **Zone with no safety command** — Builder touches a zone with no `safety_check`. **Mitigation:** `check` fails until owner adds `safety_check` or `accept_unguarded`.
 5. **Direct push to target** — **Mitigation:** branch protection; doctor audit.
 
 ## Non-goals (v1)

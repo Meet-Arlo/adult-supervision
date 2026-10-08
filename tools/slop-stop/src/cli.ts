@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import { Octokit } from '@octokit/rest';
+import path from 'node:path';
 import { Command } from 'commander';
 import { parsePolicyYaml, policyPathInRepo, type Policy } from './policy.js';
 import { resolveRepoRoot, runCheckCli } from './check-runner.js';
-import { formatDoctorReport, runDoctor, type DoctorContext } from './doctor.js';
-import { applyCanaryResultsToPolicy, runAllCanaries } from './canary.js';
+import { formatDoctorReport, quietOctokit, runDoctor, type DoctorContext } from './doctor.js';
 import { writeInitArtifacts } from './templates.js';
 import { runSafetyChecks } from './safety.js';
 import { tryGit } from './git.js';
+import { stderrStyle, stdoutStyle } from './style.js';
 
 function readGhToken(): string | undefined {
   if (process.env.GITHUB_TOKEN) {
@@ -31,11 +31,17 @@ function parseRemoteOwnerRepo(repoRoot: string): { owner: string; repo: string }
   return { owner: match[1], repo: match[2] };
 }
 
+function logPolicyPath(policyPath: string): void {
+  const style = stdoutStyle();
+  console.log(`${style.dim('using policy:')} ${style.cyan(`"${path.resolve(policyPath)}"`)}`);
+}
+
 function loadRepoPolicy(repoRoot: string, command: string): Policy {
   const policyPath = policyPathInRepo(repoRoot);
   if (!fs.existsSync(policyPath)) {
     throw new Error(`${command}: ${policyPath} is missing. Run slop-stop init first.`);
   }
+  logPolicyPath(policyPath);
   return parsePolicyYaml(fs.readFileSync(policyPath, 'utf8'));
 }
 
@@ -53,6 +59,7 @@ program
   .description('Run zone and trap checks (CI and local)')
   .option('--repo-root <path>', 'Git repository root', process.cwd())
   .requiredOption('--base-ref <sha>', 'Base commit SHA or ref')
+  .requiredOption('--base-branch <name>', 'PR base branch name (merge target)')
   .requiredOption('--head-ref <sha>', 'Head commit SHA or ref')
   .requiredOption('--head-branch <name>', 'PR head branch name')
   .requiredOption('--pr-author <login>', 'GitHub PR author login')
@@ -60,6 +67,7 @@ program
     process.exitCode = runCheckCli({
       repoRoot: resolveRepoRoot(opts.repoRoot),
       baseRef: opts.baseRef,
+      baseBranch: opts.baseBranch,
       headRef: opts.headRef,
       headBranch: opts.headBranch,
       prAuthor: opts.prAuthor,
@@ -90,9 +98,10 @@ program
   .option('--repo <name>', 'Repository name (default: from origin)')
   .action(async (opts) => {
     const repoRoot = resolveRepoRoot(opts.repoRoot);
+    const policy = loadRepoPolicy(repoRoot, 'doctor');
     const remote = parseRemoteOwnerRepo(repoRoot);
     process.exitCode = await printDoctor({
-      policy: loadRepoPolicy(repoRoot, 'doctor'),
+      policy,
       repoRoot,
       owner: opts.owner ?? remote.owner,
       repo: opts.repo ?? remote.repo,
@@ -108,11 +117,20 @@ program
   .requiredOption('--policy-file <path>', 'Policy YAML with builders, owners, and zones')
   .action(async (opts) => {
     const repoRoot = resolveRepoRoot(opts.repoRoot);
-    const remote = parseRemoteOwnerRepo(repoRoot);
+    logPolicyPath(opts.policyFile);
     const draft = parsePolicyYaml(fs.readFileSync(opts.policyFile, 'utf8'));
-    const policy = applyCanaryResultsToPolicy(draft, runAllCanaries(repoRoot, draft));
+    const remote = parseRemoteOwnerRepo(repoRoot);
+    const policy = draft;
     const written = writeInitArtifacts(repoRoot, policy);
-    console.log(`Wrote:\n${written.map((p) => `  ${p}`).join('\n')}\n\nRunning doctor...`);
+    const style = stdoutStyle();
+    console.log(
+      [
+        style.bold('Wrote:'),
+        ...written.map((p) => `  ${style.green('+')} ${p}`),
+        '',
+        style.dim('Running doctor...'),
+      ].join('\n'),
+    );
     process.exitCode = await printDoctor({
       policy,
       repoRoot,
@@ -136,7 +154,7 @@ program
     if (!token) {
       throw new Error('join: set GITHUB_TOKEN or run gh auth login.');
     }
-    const octokit = new Octokit({ auth: token });
+    const octokit = quietOctokit(token);
     const login = (await octokit.users.getAuthenticated()).data.login;
     if (opts.builder && opts.builder !== login) {
       throw new Error(`join: authenticated as ${login}, expected ${opts.builder}.`);
@@ -152,7 +170,10 @@ program
     if (perm.data.permission === 'admin') {
       throw new Error('join: builders should not use admin tokens.');
     }
-    console.log(`join: ${login} has ${perm.data.permission} access (ok).`);
+    const style = stdoutStyle();
+    console.log(
+      `${style.green('✔')} join: ${style.bold(login)} has ${perm.data.permission} access ${style.dim('(ok)')}`,
+    );
     process.exitCode = await printDoctor({
       policy,
       repoRoot,
@@ -164,6 +185,7 @@ program
   });
 
 program.parseAsync(process.argv).catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
+  const style = stderrStyle();
+  console.error(`${style.red(style.bold('✖ error:'))} ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });

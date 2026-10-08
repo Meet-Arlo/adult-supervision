@@ -25,6 +25,7 @@ export function runFromActionEnv(env: NodeJS.ProcessEnv, cwd: string): number {
     return runCheckCli({
       repoRoot,
       baseRef,
+      baseBranch: requireInput(env, 'base-branch'),
       headRef,
       headBranch,
       prAuthor: requireInput(env, 'pr-author'),

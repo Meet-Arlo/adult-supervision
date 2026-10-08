@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import type { Policy } from './policy.js';
-import { runAllCanaries, type CanaryResult } from './canary.js';
-import { builderBranchPrefix } from './branch.js';
+import { fetchProtectionItems } from './protection.js';
+import { stdoutStyle, type Style } from './style.js';
 import { gitleaksAvailable } from './gitleaks.js';
 
 export type DoctorStatus = 'pass' | 'fail' | 'info' | 'not_enforceable';
@@ -11,12 +11,12 @@ export type DoctorItem = {
   status: DoctorStatus;
   title: string;
   detail: string;
-  fix?: string;
+  /** One string, or ordered steps when the fix takes several clicks. */
+  fix?: string | string[];
 };
 
 export type DoctorReport = {
   items: DoctorItem[];
-  canaries: CanaryResult[];
   ok: boolean;
 };
 
@@ -26,7 +26,7 @@ export type DoctorContext = {
   owner: string;
   repo: string;
   token?: string;
-  /** Builders lack admin, so owner-only GitHub settings are reported as info. */
+  /** Builders lack admin, so settings only admins can read are reported as info. */
   audience: 'owner' | 'builder';
 };
 
@@ -74,6 +74,13 @@ async function builderPermissionItem(
   }
 }
 
+const noop = (): void => undefined;
+
+/** Octokit logs every non-2xx response; callers catch and report errors themselves. */
+export function quietOctokit(token: string): Octokit {
+  return new Octokit({ auth: token, log: { debug: noop, info: noop, warn: console.warn, error: noop } });
+}
+
 async function githubItems(ctx: DoctorContext): Promise<DoctorItem[]> {
   const items: DoctorItem[] = [];
   if (!ctx.token) {
@@ -87,14 +94,14 @@ async function githubItems(ctx: DoctorContext): Promise<DoctorItem[]> {
     return items;
   }
 
-  const octokit = new Octokit({ auth: ctx.token });
+  const octokit = quietOctokit(ctx.token);
   const { owner, repo } = ctx;
   const target = ctx.policy.target_branch;
 
-  let defaultBranch = target;
+  let allowAutoMerge: boolean | undefined;
   try {
     const repoMeta = await octokit.repos.get({ owner, repo });
-    defaultBranch = repoMeta.data.default_branch;
+    allowAutoMerge = repoMeta.data.allow_auto_merge;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     items.push({
@@ -111,50 +118,10 @@ async function githubItems(ctx: DoctorContext): Promise<DoctorItem[]> {
     items.push(await builderPermissionItem(octokit, owner, repo, builder));
   }
 
-  items.push({
-    id: 'builder_branch_rules',
-    status: 'not_enforceable',
-    title: 'Builder branch prefix rules',
-    detail:
-      `Each builder should only push to ${ctx.policy.builders
-        .map((b) => `"${builderBranchPrefix(b)}"`)
-        .join(', ')}. GitHub Rulesets can enforce this on paid plans.`,
-    fix:
-      'Settings → Rules → Rulesets → restrict pushes by ref name ' +
-      '(slop-stop/BUILDER/*) for builder accounts.',
-  });
-
-  if (ctx.audience === 'owner') {
-    items.push(...(await branchProtectionItems(octokit, owner, repo, target)));
-  } else {
-    items.push({
-      id: 'branch_protection',
-      status: 'info',
-      title: `Branch protection on ${target}`,
-      detail: 'Owner-only check (reading branch protection needs admin); run doctor as an owner.',
-    });
-  }
-
-  if (defaultBranch === target) {
-    items.push({
-      id: 'direct_push',
-      status: 'info',
-      title: 'Direct pushes to target',
-      detail:
-        'Confirm branch protection blocks direct pushes for builders ' +
-        '(owners may need bypass to merge).',
-      fix: 'Branch protection: restrict who can push; allow owner bypass only.',
-    });
-  }
+  items.push(...(await fetchProtectionItems(octokit, owner, repo, target, ctx.audience)));
 
   items.push(
-    {
-      id: 'auto_merge',
-      status: 'not_enforceable',
-      title: 'Auto-merge disabled',
-      detail: 'Confirm auto-merge is off for the repo (Settings → General).',
-      fix: 'Settings → General → uncheck "Allow auto-merge".',
-    },
+    autoMergeItem(allowAutoMerge),
     {
       id: 'ai_reviewers',
       status: 'info',
@@ -168,82 +135,22 @@ async function githubItems(ctx: DoctorContext): Promise<DoctorItem[]> {
   return items;
 }
 
-type BranchProtection = Awaited<
-  ReturnType<Octokit['repos']['getBranchProtection']>
->['data'];
-
-function passOrFail(
-  ok: boolean,
-  item: { id: string; title: string; pass: string; fail: string; fix: string },
-): DoctorItem {
-  return ok
-    ? { id: item.id, status: 'pass', title: item.title, detail: item.pass }
-    : { id: item.id, status: 'fail', title: item.title, detail: item.fail, fix: item.fix };
-}
-
-function protectionSettingsItems(protection: BranchProtection, target: string): DoctorItem[] {
-  const reviews = protection.required_pull_request_reviews;
-  const contexts = protection.required_status_checks?.contexts ?? [];
-  const items: DoctorItem[] = [
-    passOrFail(!protection.allow_force_pushes?.enabled, {
-      id: 'branch_force_push',
-      title: `${target} force pushes`,
-      pass: 'Force pushes blocked.',
-      fail: 'Force pushes are allowed.',
-      fix: `Settings → Branches → ${target}: disable allow force pushes.`,
-    }),
-    passOrFail(Boolean(reviews?.require_code_owner_reviews), {
-      id: 'codeowners_required',
-      title: 'CODEOWNER reviews',
-      pass: 'Required on pull requests.',
-      fail: 'Not required.',
-      fix: `Settings → Branches → ${target} protection: enable "Require review from Code Owners".`,
-    }),
-    passOrFail(Boolean(reviews?.dismiss_stale_reviews), {
-      id: 'stale_reviews',
-      title: 'Stale review dismissal',
-      pass: 'Enabled.',
-      fail: 'Not enabled.',
-      fix: `Branch protection for ${target}: enable dismiss stale reviews.`,
-    }),
-  ];
-  for (const required of ['slop-stop/check', 'slop-stop/safety']) {
-    items.push(
-      passOrFail(contexts.includes(required), {
-        id: `status_${required}`,
-        title: `Required status: ${required}`,
-        pass: 'Listed on branch protection.',
-        fail: 'Missing from branch protection.',
-        fix: `After the slop-stop workflows run once, add "${required}" to required checks for ${target}.`,
-      }),
-    );
+/** GitHub only returns allow_auto_merge to admins, so builders see this as info. */
+function autoMergeItem(allowAutoMerge: boolean | undefined): DoctorItem {
+  const title = 'Auto-merge disabled';
+  if (allowAutoMerge === undefined) {
+    return { id: 'auto_merge', status: 'info', title, detail: 'Owner-only setting; ask an owner to run doctor.' };
   }
-  return items;
-}
-
-async function branchProtectionItems(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  target: string,
-): Promise<DoctorItem[]> {
-  try {
-    const protection = await octokit.repos.getBranchProtection({ owner, repo, branch: target });
-    return protectionSettingsItems(protection.data, target);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return [
-      {
-        id: 'branch_protection',
-        status: 'fail',
-        title: `Branch protection on ${target}`,
-        detail: `No protection rules found, or the token lacks admin (${msg}).`,
-        fix:
-          `Settings → Branches → Add rule for ${target}: require PR, ` +
-          'required status checks, no force push.',
-      },
-    ];
+  if (allowAutoMerge) {
+    return {
+      id: 'auto_merge',
+      status: 'fail',
+      title,
+      detail: 'Auto-merge is on, so an approved PR can merge without a person clicking merge.',
+      fix: 'Settings → General → Pull Requests → uncheck "Allow auto-merge".',
+    };
   }
+  return { id: 'auto_merge', status: 'pass', title, detail: 'Auto-merge is off.' };
 }
 
 export async function runDoctor(ctx: DoctorContext): Promise<DoctorReport> {
@@ -266,19 +173,6 @@ export async function runDoctor(ctx: DoctorContext): Promise<DoctorReport> {
     });
   }
 
-  const canaries = runAllCanaries(ctx.repoRoot, ctx.policy);
-  for (const canary of canaries) {
-    items.push({
-      id: `canary_${canary.zoneId}`,
-      status: canary.guarded ? 'pass' : 'fail',
-      title: `Canary: ${canary.zoneId}`,
-      detail: canary.message,
-      fix: canary.guarded
-        ? undefined
-        : 'Fix safety_check, or add accept_unguarded to policy with owner sign-off.',
-    });
-  }
-
   const ok = items.every(
     (item) =>
       item.status === 'pass' ||
@@ -286,19 +180,71 @@ export async function runDoctor(ctx: DoctorContext): Promise<DoctorReport> {
       item.status === 'not_enforceable',
   );
 
-  return { items, canaries, ok };
+  return { items, ok };
 }
 
-export function formatDoctorReport(report: DoctorReport): string {
-  const lines = ['slop-stop doctor', ''];
-  for (const item of report.items) {
-    const tag = item.status.toUpperCase();
-    lines.push(`[${tag}] ${item.title}`, `  ${item.detail}`);
-    if (item.fix) {
-      lines.push(`  Fix: ${item.fix}`);
-    }
-    lines.push('');
+const BADGE_COLOR = {
+  pass: 'green',
+  fail: 'red',
+  not_enforceable: 'yellow',
+  info: 'cyan',
+} as const;
+
+const BADGE_LABEL: Record<DoctorStatus, string> = {
+  pass: 'PASS',
+  fail: 'FAIL',
+  not_enforceable: 'N/E ',
+  info: 'INFO',
+};
+
+const INDENT = '         ';
+
+function fixLines(fix: string | string[], style: Style): string[] {
+  if (typeof fix === 'string') {
+    return [`${INDENT}${style.yellow('→ Fix:')} ${fix}`];
   }
-  lines.push(report.ok ? 'Overall: PASS' : 'Overall: FAIL');
+  return [
+    `${INDENT}${style.yellow('→ Fix:')}`,
+    ...fix.map((step, i) => `${INDENT}  ${style.dim(`${i + 1}.`)} ${step}`),
+  ];
+}
+
+function itemLines(item: DoctorItem, style: Style): string[] {
+  const title = item.status === 'fail' ? style.bold(item.title) : item.title;
+  const lines = [
+    `  ${style.badge(BADGE_LABEL[item.status], BADGE_COLOR[item.status])} ${title}`,
+    `${INDENT}${style.dim(item.detail)}`,
+  ];
+  if (item.fix && item.status !== 'pass') {
+    lines.push(...fixLines(item.fix, style));
+  }
+  return lines;
+}
+
+function summaryLine(items: DoctorItem[], style: Style): string {
+  const count = (status: DoctorStatus) => items.filter((i) => i.status === status).length;
+  const parts = [
+    style.green(`${count('pass')} passed`),
+    style.red(`${count('fail')} failed`),
+    style.yellow(`${count('not_enforceable')} not enforceable`),
+    style.cyan(`${count('info')} info`),
+  ];
+  return `  ${parts.join(style.dim(' · '))}`;
+}
+
+export function formatDoctorReport(report: DoctorReport, style: Style = stdoutStyle()): string {
+  const failures = report.items.filter((i) => i.status === 'fail').length;
+  const lines = ['', `  ${style.bold('slop-stop doctor')}`, ''];
+  for (const item of report.items) {
+    lines.push(...itemLines(item, style), '');
+  }
+  lines.push(summaryLine(report.items, style), '');
+  lines.push(
+    report.ok
+      ? `  ${style.green(style.bold('✔ All required checks pass.'))} ${style.dim('Review N/E items by hand.')}`
+      : `  ${style.red(style.bold(`✖ ${failures} ${failures === 1 ? 'item needs' : 'items need'} fixing.`))} ` +
+        style.dim('Follow each → Fix, then re-run slop-stop doctor.'),
+    '',
+  );
   return lines.join('\n');
 }

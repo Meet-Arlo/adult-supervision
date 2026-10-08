@@ -5,10 +5,12 @@ import { checkZoneInvariants } from './invariants.js';
 import { scanSecretsInDiff } from './gitleaks.js';
 import { type Policy, type Zone, parsePolicyYaml, POLICY_REL_PATH } from './policy.js';
 import { runTraps } from './traps.js';
+import { stdoutStyle, type Style } from './style.js';
 
 export type CheckInput = {
   policyYaml: string;
   baseRef: string;
+  baseBranch: string;
   headRef: string;
   headBranch: string;
   prAuthor: string;
@@ -44,14 +46,8 @@ function zoneForPath(policy: Policy, filePath: string): Zone | null {
   return null;
 }
 
-function zoneGuarded(zone: Zone): boolean {
-  if (zone.guarded === false) {
-    return false;
-  }
-  if (zone.guarded === true) {
-    return true;
-  }
-  return Boolean(zone.safety_check);
+function zoneHasSafetyCommand(zone: Zone): boolean {
+  return Boolean(zone.safety_check) || Boolean(zone.accept_unguarded);
 }
 
 function addFinding(
@@ -66,7 +62,7 @@ function addFinding(
 export function runCheck(input: CheckInput): CheckResult {
   const findings: CheckFinding[] = [];
   const builderId = parseBuilderBranch(input.headBranch);
-  const isBuilderPr = builderId !== null;
+  const isBuilderBranch = builderId !== null;
 
   if (!input.policyYaml.trim()) {
     addFinding(
@@ -75,7 +71,7 @@ export function runCheck(input: CheckInput): CheckResult {
       'policy_missing',
       `No policy at ${POLICY_REL_PATH} on base ref; every PR fails closed.`,
     );
-    return { ok: false, findings, isBuilderPr };
+    return { ok: false, findings, isBuilderPr: false };
   }
 
   let policy: Policy;
@@ -84,22 +80,45 @@ export function runCheck(input: CheckInput): CheckResult {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     addFinding(findings, 'error', 'policy_invalid', msg);
-    return { ok: false, findings, isBuilderPr };
+    return { ok: false, findings, isBuilderPr: false };
   }
 
-  if (!isBuilderPr) {
-    if (!policy.owners.includes(input.prAuthor)) {
-      addFinding(
-        findings,
-        'error',
-        'non_owner_branch',
-        `PR branch "${input.headBranch}" is not a builder branch ` +
-          `(use slop-stop/<builder>/<slug>), and author "${input.prAuthor}" ` +
-          'is not listed in policy owners.',
-      );
-      return { ok: false, findings, isBuilderPr: false };
+  const authorInBuilders = policy.builders.includes(input.prAuthor);
+
+  if (authorInBuilders && !isBuilderBranch) {
+    addFinding(
+      findings,
+      'error',
+      'builder_branch_required',
+      `Author "${input.prAuthor}" is a builder and must use branch ` +
+        `slop-stop/${input.prAuthor}/<slug> (got "${input.headBranch}").`,
+    );
+    return { ok: false, findings, isBuilderPr: false };
+  }
+
+  if (!isBuilderBranch) {
+    if (policy.owners.includes(input.prAuthor)) {
+      return { ok: true, findings, isBuilderPr: false };
     }
-    return { ok: true, findings, isBuilderPr: false };
+    addFinding(
+      findings,
+      'error',
+      'non_owner_branch',
+      `PR branch "${input.headBranch}" is not a builder branch ` +
+        `(use slop-stop/<builder>/<slug>), and author "${input.prAuthor}" ` +
+        'is not listed in policy owners.',
+    );
+    return { ok: false, findings, isBuilderPr: false };
+  }
+
+  if (input.baseBranch !== policy.target_branch) {
+    addFinding(
+      findings,
+      'error',
+      'wrong_merge_target',
+      `Builder PRs must target "${policy.target_branch}" (got "${input.baseBranch}").`,
+    );
+    return { ok: false, findings, isBuilderPr: true };
   }
 
   if (!policy.builders.includes(builderId)) {
@@ -168,13 +187,12 @@ export function runCheck(input: CheckInput): CheckResult {
 
     zonesTouched.add(zone.id);
 
-    if (!zoneGuarded(zone) && !zone.accept_unguarded) {
+    if (!zoneHasSafetyCommand(zone)) {
       addFinding(
         findings,
         'error',
-        'unguarded_zone',
-        `Zone "${zone.name}" (${zone.id}) is unguarded. Run slop-stop doctor or ` +
-          'add accept_unguarded to policy with owner approval.',
+        'no_safety_check',
+        `Zone "${zone.name}" (${zone.id}) has no safety_check. Add one, or accept_unguarded in policy.`,
       );
     }
 
@@ -198,12 +216,16 @@ export function runCheck(input: CheckInput): CheckResult {
   return { ok: !hasError, findings, isBuilderPr: true };
 }
 
-export function formatCheckReport(result: CheckResult): string {
+export function formatCheckReport(result: CheckResult, style: Style = stdoutStyle()): string {
   if (result.ok) {
-    return result.isBuilderPr
-      ? 'slop-stop check passed (builder PR).'
-      : 'slop-stop check passed (owner PR).';
+    const kind = result.isBuilderPr ? 'builder PR' : 'owner PR';
+    return `${style.green(style.bold('✔ slop-stop check passed'))} ${style.dim(`(${kind})`)}`;
   }
-  const lines = ['slop-stop check failed:', ...result.findings.map((f) => `- ${f.message}`)];
+  const count = result.findings.length;
+  const lines = [
+    style.red(style.bold('✖ slop-stop check failed')) +
+      style.dim(` (${count} problem${count === 1 ? '' : 's'})`),
+    ...result.findings.map((f) => `  ${style.red('•')} ${f.message}`),
+  ];
   return lines.join('\n');
 }

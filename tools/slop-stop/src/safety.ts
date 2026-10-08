@@ -4,6 +4,7 @@ import { matchesAny } from './glob.js';
 import { parsePolicyYaml, POLICY_REL_PATH } from './policy.js';
 import { parseBuilderBranch } from './branch.js';
 import { TRUSTED_SH, trustedExecEnv } from './trusted-exec.js';
+import { stderrStyle, stdoutStyle } from './style.js';
 
 export function runSafetyChecks(options: {
   repoRoot: string;
@@ -11,17 +12,19 @@ export function runSafetyChecks(options: {
   headRef: string;
   headBranch: string;
 }): number {
+  const out = stdoutStyle();
+  const err = stderrStyle();
   assertCommitExists(options.repoRoot, options.baseRef, 'Base');
   assertCommitExists(options.repoRoot, options.headRef, 'Head');
   const policyRaw = readFileAtRef(options.repoRoot, options.baseRef, POLICY_REL_PATH);
   if (!policyRaw) {
-    console.error('slop-stop/safety: no policy on base ref.');
+    console.error(err.red(err.bold('✖ slop-stop/safety: no policy on base ref.')));
     return 1;
   }
   const policy = parsePolicyYaml(policyRaw);
   const builderId = parseBuilderBranch(options.headBranch);
   if (!builderId || !policy.builders.includes(builderId)) {
-    console.log('slop-stop/safety: skipped (not a builder PR).');
+    console.log(out.dim('○ slop-stop/safety: skipped (not a builder PR).'));
     return 0;
   }
 
@@ -38,7 +41,9 @@ export function runSafetyChecks(options: {
         continue;
       }
       zonesRun.add(zone.id);
-      console.log(`Running safety_check for zone ${zone.id}: ${zone.safety_check}`);
+      console.log(
+        `${out.cyan('▶')} Running safety_check for zone ${out.bold(zone.id)}: ${out.dim(zone.safety_check)}`,
+      );
       try {
         execFileSync(TRUSTED_SH, ['-c', zone.safety_check], {
           cwd: options.repoRoot,
@@ -46,12 +51,12 @@ export function runSafetyChecks(options: {
           env: trustedExecEnv(),
         });
       } catch {
-        console.error(`slop-stop/safety: safety_check failed for zone ${zone.id}.`);
+        console.error(err.red(err.bold(`✖ slop-stop/safety: safety_check failed for zone ${zone.id}.`)));
         return 1;
       }
     }
   }
 
-  console.log('slop-stop/safety: passed.');
+  console.log(out.green(out.bold('✔ slop-stop/safety: passed.')));
   return 0;
 }

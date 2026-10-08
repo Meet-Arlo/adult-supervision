@@ -45,11 +45,13 @@ var TRUSTED_BIN_DIRS = [
 var TRUSTED_SH = "/bin/sh";
 function trustedExecEnv() {
   const env = {
-    PATH: TRUSTED_BIN_DIRS.join(import_node_path.default.delimiter)
+    PATH: [import_node_path.default.dirname(process.execPath), ...TRUSTED_BIN_DIRS].join(import_node_path.default.delimiter)
   };
-  const lang = process.env.LANG;
-  if (lang) {
-    env.LANG = lang;
+  for (const key of ["LANG", "HOME"]) {
+    const value = process.env[key];
+    if (value) {
+      env[key] = value;
+    }
   }
   return env;
 }
@@ -7268,6 +7270,7 @@ var zoneSchema = external_exports.object({
   safety_check: external_exports.string().min(1).optional(),
   invariants: external_exports.array(invariantSchema).optional(),
   escalate_to: external_exports.string().min(1),
+  /** Ignored (legacy). Zones use safety_check on PRs; no empty-file canary. */
   guarded: external_exports.boolean().optional(),
   accept_unguarded: acceptUnguardedSchema.optional()
 });
@@ -9520,6 +9523,46 @@ function runTraps(entries, patches) {
   ];
 }
 
+// src/style.ts
+var CODES = { red: 31, green: 32, yellow: 33, cyan: 36 };
+function wrap(enabled, open, close) {
+  return enabled ? (s) => `\x1B[${open}m${s}\x1B[${close}m` : (s) => s;
+}
+function createStyle(enabled) {
+  const colors = {
+    red: wrap(enabled, CODES.red, 39),
+    green: wrap(enabled, CODES.green, 39),
+    yellow: wrap(enabled, CODES.yellow, 39),
+    cyan: wrap(enabled, CODES.cyan, 39)
+  };
+  const bold = wrap(enabled, 1, 22);
+  const inverse = wrap(enabled, 7, 27);
+  return {
+    bold,
+    dim: wrap(enabled, 2, 22),
+    ...colors,
+    badge: (s, color) => bold(colors[color](inverse(` ${s} `)))
+  };
+}
+function colorEnabled(stream, env = process.env) {
+  if (env.NO_COLOR) {
+    return false;
+  }
+  if (env.FORCE_COLOR !== void 0) {
+    return env.FORCE_COLOR !== "0";
+  }
+  if (env.GITHUB_ACTIONS === "true") {
+    return true;
+  }
+  return Boolean(stream.isTTY) && env.TERM !== "dumb";
+}
+function stdoutStyle() {
+  return createStyle(colorEnabled(process.stdout));
+}
+function stderrStyle() {
+  return createStyle(colorEnabled(process.stderr));
+}
+
 // src/check.ts
 function zoneForPath(policy, filePath) {
   if (matchesAny(filePath, policy.deny)) {
@@ -9532,14 +9575,8 @@ function zoneForPath(policy, filePath) {
   }
   return null;
 }
-function zoneGuarded(zone) {
-  if (zone.guarded === false) {
-    return false;
-  }
-  if (zone.guarded === true) {
-    return true;
-  }
-  return Boolean(zone.safety_check);
+function zoneHasSafetyCommand(zone) {
+  return Boolean(zone.safety_check) || Boolean(zone.accept_unguarded);
 }
 function addFinding(findings, level, code, message) {
   findings.push({ level, code, message });
@@ -9547,7 +9584,7 @@ function addFinding(findings, level, code, message) {
 function runCheck(input) {
   const findings = [];
   const builderId = parseBuilderBranch(input.headBranch);
-  const isBuilderPr = builderId !== null;
+  const isBuilderBranch = builderId !== null;
   if (!input.policyYaml.trim()) {
     addFinding(
       findings,
@@ -9555,7 +9592,7 @@ function runCheck(input) {
       "policy_missing",
       `No policy at ${POLICY_REL_PATH} on base ref; every PR fails closed.`
     );
-    return { ok: false, findings, isBuilderPr };
+    return { ok: false, findings, isBuilderPr: false };
   }
   let policy;
   try {
@@ -9563,19 +9600,38 @@ function runCheck(input) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     addFinding(findings, "error", "policy_invalid", msg);
-    return { ok: false, findings, isBuilderPr };
+    return { ok: false, findings, isBuilderPr: false };
   }
-  if (!isBuilderPr) {
-    if (!policy.owners.includes(input.prAuthor)) {
-      addFinding(
-        findings,
-        "error",
-        "non_owner_branch",
-        `PR branch "${input.headBranch}" is not a builder branch (use slop-stop/<builder>/<slug>), and author "${input.prAuthor}" is not listed in policy owners.`
-      );
-      return { ok: false, findings, isBuilderPr: false };
+  const authorInBuilders = policy.builders.includes(input.prAuthor);
+  if (authorInBuilders && !isBuilderBranch) {
+    addFinding(
+      findings,
+      "error",
+      "builder_branch_required",
+      `Author "${input.prAuthor}" is a builder and must use branch slop-stop/${input.prAuthor}/<slug> (got "${input.headBranch}").`
+    );
+    return { ok: false, findings, isBuilderPr: false };
+  }
+  if (!isBuilderBranch) {
+    if (policy.owners.includes(input.prAuthor)) {
+      return { ok: true, findings, isBuilderPr: false };
     }
-    return { ok: true, findings, isBuilderPr: false };
+    addFinding(
+      findings,
+      "error",
+      "non_owner_branch",
+      `PR branch "${input.headBranch}" is not a builder branch (use slop-stop/<builder>/<slug>), and author "${input.prAuthor}" is not listed in policy owners.`
+    );
+    return { ok: false, findings, isBuilderPr: false };
+  }
+  if (input.baseBranch !== policy.target_branch) {
+    addFinding(
+      findings,
+      "error",
+      "wrong_merge_target",
+      `Builder PRs must target "${policy.target_branch}" (got "${input.baseBranch}").`
+    );
+    return { ok: false, findings, isBuilderPr: true };
   }
   if (!policy.builders.includes(builderId)) {
     addFinding(
@@ -9633,12 +9689,12 @@ function runCheck(input) {
       continue;
     }
     zonesTouched.add(zone.id);
-    if (!zoneGuarded(zone) && !zone.accept_unguarded) {
+    if (!zoneHasSafetyCommand(zone)) {
       addFinding(
         findings,
         "error",
-        "unguarded_zone",
-        `Zone "${zone.name}" (${zone.id}) is unguarded. Run slop-stop doctor or add accept_unguarded to policy with owner approval.`
+        "no_safety_check",
+        `Zone "${zone.name}" (${zone.id}) has no safety_check. Add one, or accept_unguarded in policy.`
       );
     }
     const baseContent = input.fileContentAtBase(filePath) ?? "";
@@ -9658,11 +9714,16 @@ function runCheck(input) {
   const hasError = findings.some((f) => f.level === "error");
   return { ok: !hasError, findings, isBuilderPr: true };
 }
-function formatCheckReport(result) {
+function formatCheckReport(result, style = stdoutStyle()) {
   if (result.ok) {
-    return result.isBuilderPr ? "slop-stop check passed (builder PR)." : "slop-stop check passed (owner PR).";
+    const kind = result.isBuilderPr ? "builder PR" : "owner PR";
+    return `${style.green(style.bold("\u2714 slop-stop check passed"))} ${style.dim(`(${kind})`)}`;
   }
-  const lines = ["slop-stop check failed:", ...result.findings.map((f) => `- ${f.message}`)];
+  const count = result.findings.length;
+  const lines = [
+    style.red(style.bold("\u2716 slop-stop check failed")) + style.dim(` (${count} problem${count === 1 ? "" : "s"})`),
+    ...result.findings.map((f) => `  ${style.red("\u2022")} ${f.message}`)
+  ];
   return lines.join("\n");
 }
 
@@ -9676,7 +9737,7 @@ function loadDiff(cwd, baseRef, headRef) {
   return { diffEntries, fullDiff: unifiedDiff(cwd, baseRef, headRef), patches };
 }
 function runCheckInRepo(options) {
-  const { repoRoot, baseRef, headRef, headBranch, prAuthor } = options;
+  const { repoRoot, baseRef, baseBranch, headRef, headBranch, prAuthor } = options;
   assertCommitExists(repoRoot, baseRef, "Base");
   assertCommitExists(repoRoot, headRef, "Head");
   const policyYaml = readFileAtRef(repoRoot, baseRef, POLICY_REL_PATH) ?? "";
@@ -9684,6 +9745,7 @@ function runCheckInRepo(options) {
   return runCheck({
     policyYaml,
     baseRef,
+    baseBranch,
     headRef,
     headBranch,
     prAuthor,
@@ -9709,17 +9771,19 @@ function resolveRepoRoot(cwd) {
 // src/safety.ts
 var import_node_child_process3 = require("node:child_process");
 function runSafetyChecks(options) {
+  const out = stdoutStyle();
+  const err = stderrStyle();
   assertCommitExists(options.repoRoot, options.baseRef, "Base");
   assertCommitExists(options.repoRoot, options.headRef, "Head");
   const policyRaw = readFileAtRef(options.repoRoot, options.baseRef, POLICY_REL_PATH);
   if (!policyRaw) {
-    console.error("slop-stop/safety: no policy on base ref.");
+    console.error(err.red(err.bold("\u2716 slop-stop/safety: no policy on base ref.")));
     return 1;
   }
   const policy = parsePolicyYaml(policyRaw);
   const builderId = parseBuilderBranch(options.headBranch);
   if (!builderId || !policy.builders.includes(builderId)) {
-    console.log("slop-stop/safety: skipped (not a builder PR).");
+    console.log(out.dim("\u25CB slop-stop/safety: skipped (not a builder PR)."));
     return 0;
   }
   const entries = diffNameStatus(options.repoRoot, options.baseRef, options.headRef);
@@ -9734,7 +9798,9 @@ function runSafetyChecks(options) {
         continue;
       }
       zonesRun.add(zone.id);
-      console.log(`Running safety_check for zone ${zone.id}: ${zone.safety_check}`);
+      console.log(
+        `${out.cyan("\u25B6")} Running safety_check for zone ${out.bold(zone.id)}: ${out.dim(zone.safety_check)}`
+      );
       try {
         (0, import_node_child_process3.execFileSync)(TRUSTED_SH, ["-c", zone.safety_check], {
           cwd: options.repoRoot,
@@ -9742,12 +9808,12 @@ function runSafetyChecks(options) {
           env: trustedExecEnv()
         });
       } catch {
-        console.error(`slop-stop/safety: safety_check failed for zone ${zone.id}.`);
+        console.error(err.red(err.bold(`\u2716 slop-stop/safety: safety_check failed for zone ${zone.id}.`)));
         return 1;
       }
     }
   }
-  console.log("slop-stop/safety: passed.");
+  console.log(out.green(out.bold("\u2714 slop-stop/safety: passed.")));
   return 0;
 }
 
@@ -9772,6 +9838,7 @@ function runFromActionEnv(env, cwd) {
     return runCheckCli({
       repoRoot,
       baseRef,
+      baseBranch: requireInput(env, "base-branch"),
       headRef,
       headBranch,
       prAuthor: requireInput(env, "pr-author")

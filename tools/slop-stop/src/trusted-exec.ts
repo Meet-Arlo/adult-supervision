@@ -12,14 +12,19 @@ export const TRUSTED_BIN_DIRS = [
 
 export const TRUSTED_SH = '/bin/sh';
 
-/** Env for subprocesses: never inherit PATH from the parent process. */
+/**
+ * Env for subprocesses: never inherit PATH from the parent process.
+ * The bin dir of the Node running slop-stop is added so npm/npx resolve under nodenv, nvm, or volta.
+ */
 export function trustedExecEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    PATH: TRUSTED_BIN_DIRS.join(path.delimiter),
+    PATH: [path.dirname(process.execPath), ...TRUSTED_BIN_DIRS].join(path.delimiter),
   };
-  const lang = process.env.LANG;
-  if (lang) {
-    env.LANG = lang;
+  for (const key of ['LANG', 'HOME'] as const) {
+    const value = process.env[key];
+    if (value) {
+      env[key] = value;
+    }
   }
   return env;
 }

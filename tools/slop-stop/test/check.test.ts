@@ -5,7 +5,7 @@ import type { DiffEntry } from '../src/git.js';
 
 const basePolicy = {
   version: 1,
-  builders: ['builder-one'],
+  builders: ['builder-one', 'owner-one'],
   owners: ['owner-one'],
   target_branch: 'main',
   deny: ['**/*.py'],
@@ -15,8 +15,8 @@ const basePolicy = {
       name: 'Marketing copy',
       description: 'Homepage text',
       allow: ['content/home.md'],
+      safety_check: 'true',
       escalate_to: 'owner-one',
-      guarded: true,
       invariants: [{ require_literal: 'KEEP_ME' }, { freeze_headings: true }],
     },
   ],
@@ -40,6 +40,7 @@ function run(
   return runCheck({
     policyYaml: overrides.policyYaml ?? policyYaml(),
     baseRef: 'base',
+    baseBranch: overrides.baseBranch ?? 'main',
     headRef: 'head',
     headBranch,
     prAuthor,
@@ -85,12 +86,32 @@ describe('runCheck', () => {
     expect(result.findings.some((f) => f.code === 'non_owner_branch')).toBe(true);
   });
 
-  it('allows owner PRs off the builder prefix', () => {
+  it('allows owner-only PRs off the builder prefix', () => {
+    const policyOnlyOwner = yaml.dump({
+      ...basePolicy,
+      builders: ['builder-one'],
+    });
     const result = run({
+      policyYaml: policyOnlyOwner,
       headBranch: 'feature/owner-fix',
       prAuthor: 'owner-one',
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('requires builders on the slop-stop branch even when they are owners', () => {
+    const result = run({
+      headBranch: 'feature/owner-fix',
+      prAuthor: 'owner-one',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.findings.some((f) => f.code === 'builder_branch_required')).toBe(true);
+  });
+
+  it('blocks builder PRs that target the wrong base branch', () => {
+    const result = run({ baseBranch: 'develop' });
+    expect(result.ok).toBe(false);
+    expect(result.findings.some((f) => f.code === 'wrong_merge_target')).toBe(true);
   });
 
   it('blocks broken invariants', () => {

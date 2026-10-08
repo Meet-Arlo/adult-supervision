@@ -24,6 +24,7 @@ const zoneSchema = z.object({
   safety_check: z.string().min(1).optional(),
   invariants: z.array(invariantSchema).optional(),
   escalate_to: z.string().min(1),
+  /** Ignored (legacy). Zones use safety_check on PRs; no empty-file canary. */
   guarded: z.boolean().optional(),
   accept_unguarded: acceptUnguardedSchema.optional(),
 });
