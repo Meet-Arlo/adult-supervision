@@ -7,7 +7,3 @@ export function parseBuilderBranch(headBranch: string): string | null {
   }
   return match[1];
 }
-
-export function builderBranchPrefix(builder: string): string {
-  return `slop-stop/${builder}/`;
-}

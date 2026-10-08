@@ -58,6 +58,7 @@ From repo root (use PR base as `main` or the policy `target_branch` when compari
 ```bash
 npx @meet-arlo/slop-stop check \
   --base-ref origin/TARGET_BRANCH \
+  --base-branch TARGET_BRANCH \
   --head-ref HEAD \
   --head-branch "$(git branch --show-current)" \
   --pr-author BUILDER_GITHUB_LOGIN
@@ -69,7 +70,7 @@ Fix any failure before continuing.
 
 ## Step 4: PR (after explicit approval)
 
-1. Branch: `slop-stop/BUILDER_LOGIN/short-slug` (must match prefix rules).
+1. Branch: `slop-stop/BUILDER_LOGIN/short-slug`. `check` fails builder PRs from any other branch.
 2. Commit with a one-line message describing the wording change.
 3. Push and open PR to **policy target_branch** only.
 4. Request review from the zone's `escalate_to` CODEOWNER.

@@ -4,7 +4,7 @@ import yaml from 'js-yaml';
 import type { Policy } from './policy.js';
 
 /** Consumer workflows pin this repo + tag in `uses:`; the tag must exist on GitHub. */
-export const SLOP_STOP_ACTION_REF = 'Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.0.0';
+export const SLOP_STOP_ACTION_REF = 'Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.1.0';
 export const SLOP_STOP_PACKAGE = '@meet-arlo/slop-stop';
 
 export const CHECK_WORKFLOW_FILE = 'slop-stop-check.yml';
@@ -45,13 +45,15 @@ export function renderAgentsBlock(policy: Policy): string {
     AGENTS_BLOCK_START,
     '## slop-stop (builder guardrails)',
     '',
-    'If you are making product copy or prompt changes as a **builder**, use the',
-    '`guarded-change` skill. Stay inside your zone; do not edit Python, CI, or policy.',
+    'If you are making product copy or prompt changes as a **builder**, follow the',
+    '`guarded-change` agent workflow (`tools/slop-stop/skills/guarded-change/SKILL.md` in',
+    'the slop-stop package, or your team\'s copy). Stay inside your zone; do not edit Python, CI, or policy.',
     '',
     'Before opening a PR, run:',
     '',
     '```bash',
-    `npx ${SLOP_STOP_PACKAGE} check --base-ref origin/${policy.target_branch} --head-ref HEAD \\`,
+    `npx ${SLOP_STOP_PACKAGE} check --base-ref origin/${policy.target_branch} \\`,
+    `  --base-branch ${policy.target_branch} --head-ref HEAD \\`,
     '  --head-branch "$(git branch --show-current)" --pr-author YOUR_GITHUB_LOGIN',
     '```',
     AGENTS_BLOCK_END,
@@ -109,6 +111,7 @@ ${CHECKOUT_FULL_HISTORY}
         with:
           mode: check
           base-ref: \${{ github.event.pull_request.base.sha }}
+          base-branch: \${{ github.event.pull_request.base.ref }}
           head-ref: \${{ github.event.pull_request.head.sha }}
           head-branch: \${{ github.event.pull_request.head.ref }}
           pr-author: \${{ github.event.pull_request.user.login }}

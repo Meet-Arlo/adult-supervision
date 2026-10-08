@@ -7,6 +7,9 @@ inputs:
   base-ref:
     description: Base commit SHA
     required: true
+  base-branch:
+    description: PR base branch name (merge target)
+    required: true
   head-ref:
     description: Head commit SHA
     required: true

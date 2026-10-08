@@ -14,6 +14,7 @@ import { formatCheckReport, runCheck, type CheckResult } from './check.js';
 export type RunCheckOptions = {
   repoRoot: string;
   baseRef: string;
+  baseBranch: string;
   headRef: string;
   headBranch: string;
   prAuthor: string;
@@ -35,12 +36,11 @@ function loadDiff(cwd: string, baseRef: string, headRef: string): DiffData {
 }
 
 export function runCheckInRepo(options: RunCheckOptions): CheckResult {
-  const { repoRoot, baseRef, headRef, headBranch, prAuthor } = options;
+  const { repoRoot, baseRef, baseBranch, headRef, headBranch, prAuthor } = options;
   assertCommitExists(repoRoot, baseRef, 'Base');
   assertCommitExists(repoRoot, headRef, 'Head');
 
   const policyYaml = readFileAtRef(repoRoot, baseRef, POLICY_REL_PATH) ?? '';
-  // Only builder branches are diffed; owner and non-builder PRs are decided on identity alone.
   const diff: DiffData =
     parseBuilderBranch(headBranch) === null
       ? { diffEntries: [], fullDiff: '', patches: new Map() }
@@ -49,6 +49,7 @@ export function runCheckInRepo(options: RunCheckOptions): CheckResult {
   return runCheck({
     policyYaml,
     baseRef,
+    baseBranch,
     headRef,
     headBranch,
     prAuthor,
