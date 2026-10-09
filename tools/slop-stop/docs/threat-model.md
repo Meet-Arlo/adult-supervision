@@ -11,8 +11,8 @@
 
 | Layer | Trust level | Notes |
 |-------|-------------|-------|
-| `slop-stop/check` on `pull_request_target` | High | Runs from default-branch workflow; uses base-ref policy |
-| `slop-stop/safety` on `pull_request` | Low (advisory) | Checks out PR head and runs `safety_check`; malicious PR could exfiltrate secrets if the command is unsafe |
+| `slop-stop/check` on `pull_request_target` | High | Default-branch workflow; checks out **base** SHA; fetches head as objects only; `persist-credentials: false` |
+| `slop-stop/safety` on `pull_request` | Low (advisory) | Checks out PR head and runs `safety_check`; `persist-credentials: false` so the job token is not in `.git/config`. The runner process still has `GITHUB_TOKEN` (GitHub Actions). Do not grant extra secrets. |
 | Local agent + skills | Low | Convenience; server checks are authoritative |
 | `doctor` | Read-only | Does not change GitHub settings in v1 |
 
@@ -40,10 +40,11 @@
 ## Known bypasses and mitigations
 
 1. **Malicious workflow on PR head** — A builder could edit `.github/workflows` to skip checks. **Mitigation:** trap rule blocks `.github/**` for builders; only owners merge workflow changes; pin Action tag to release.
-2. **Safety job runs PR code** — `safety_check` must be a read-only test command chosen by the owner. **Mitigation:** label advisory in doctor; do not grant secrets to the safety job.
+2. **Safety job runs PR code** — `safety_check` must be a read-only test command chosen by the owner. **Mitigation:** `persist-credentials: false`; no extra secrets on the job; treat the job as advisory.
 3. **Owner account compromise** — Out of scope; slop-stop assumes owners are trusted.
 4. **Zone with no safety command** — Builder touches a zone with no `safety_check`. **Mitigation:** `check` fails until owner adds `safety_check` or `accept_unguarded`.
 5. **Direct push to target** — **Mitigation:** branch protection; doctor audit.
+6. **Untrusted tree + persisted token on `pull_request_target`** — checking out PR HEAD used to leave the base-repo token in `.git/config`. **Mitigation:** check checks out the base SHA; head is a one-shot `git fetch` of `pull/<n>/head`; `persist-credentials: false` on both workflows.
 
 ## Non-goals (v1)
 
