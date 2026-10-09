@@ -9544,23 +9544,11 @@ function createStyle(enabled) {
     badge: (s, color) => bold(colors[color](inverse(` ${s} `)))
   };
 }
-function colorEnabled(stream, env = process.env) {
-  if (env.NO_COLOR) {
-    return false;
-  }
-  if (env.FORCE_COLOR !== void 0) {
-    return env.FORCE_COLOR !== "0";
-  }
-  if (env.GITHUB_ACTIONS === "true") {
-    return true;
-  }
-  return Boolean(stream.isTTY) && env.TERM !== "dumb";
-}
 function stdoutStyle() {
-  return createStyle(colorEnabled(process.stdout));
+  return createStyle(true);
 }
 function stderrStyle() {
-  return createStyle(colorEnabled(process.stderr));
+  return createStyle(true);
 }
 
 // src/check.ts
