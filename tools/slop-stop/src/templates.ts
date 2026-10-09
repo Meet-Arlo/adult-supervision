@@ -77,14 +77,31 @@ export function mergeMarkedBlock(
   return head ? `${head}\n\n${block}` : block;
 }
 
-const CHECKOUT_FULL_HISTORY = `      - uses: actions/checkout@v4
+/** Check: trusted base tree only. Head is fetched as objects, never checked out. */
+const CHECK_CHECKOUT = `      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch PR head
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\\n')
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic \${auth}" \\
+            fetch --no-tags origin \\
+            "pull/\${{ github.event.pull_request.number }}/head"`;
+
+/** Safety: needs the PR tree. Do not leave the job token in .git/config. */
+const SAFETY_CHECKOUT = `      - uses: actions/checkout@v4
         with:
           ref: \${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-          filter: blob:none`;
+          persist-credentials: false`;
 
 export function renderCheckWorkflow(policy: Policy): string {
-  return `# Written by slop-stop init. Trusted: runs the pinned action, never PR code.
+  return `# Written by slop-stop init. Trusted: pinned action, base checkout, no persisted git credentials.
 name: slop-stop-check
 
 on:
@@ -106,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-${CHECKOUT_FULL_HISTORY}
+${CHECK_CHECKOUT}
       - uses: ${SLOP_STOP_ACTION_REF}
         with:
           mode: check
@@ -140,7 +157,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-${CHECKOUT_FULL_HISTORY}
+${SAFETY_CHECKOUT}
       - uses: ${SLOP_STOP_ACTION_REF}
         with:
           mode: safety

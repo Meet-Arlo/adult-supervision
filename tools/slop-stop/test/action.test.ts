@@ -61,8 +61,29 @@ describe('templates', () => {
       expect(wf).toContain(`uses: ${SLOP_STOP_ACTION_REF}`);
       expect(wf).toContain('branches: [develop]');
       expect(wf).toContain('fetch-depth: 0');
+      expect(wf).toContain('persist-credentials: false');
+      expect(wf).not.toContain('filter: blob:none');
       expect(wf).toContain('timeout-minutes:');
     }
+  });
+
+  it('checks out the base tree for check and does not persist the job token', () => {
+    const check = renderCheckWorkflow(policy);
+    const checkout = check.slice(
+      check.indexOf('actions/checkout'),
+      check.indexOf('Fetch PR head'),
+    );
+    expect(checkout).toContain('ref: ${{ github.event.pull_request.base.sha }}');
+    expect(checkout).not.toContain('head.sha');
+    expect(check).toContain('pull/${{ github.event.pull_request.number }}/head');
+    expect(check).toContain('git -c "http.https://github.com/.extraheader=');
+  });
+
+  it('checks out the PR head for safety without leaving credentials in .git/config', () => {
+    const safety = renderSafetyWorkflow(policy);
+    expect(safety).toContain('ref: ${{ github.event.pull_request.head.sha }}');
+    expect(safety).toContain('persist-credentials: false');
+    expect(safety).not.toContain('Fetch PR head');
   });
 
   it('adds a block to an empty file without leading blank lines', () => {
