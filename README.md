@@ -1,87 +1,63 @@
 # slop-stop
 
-This repo (`adult-supervision`) is the home of **slop-stop**: `@meet-arlo/slop-stop`. It is the only tool here today.
+This repo (`adult-supervision`) publishes **slop-stop** (`@meet-arlo/slop-stop`). A non-engineer, or their coding agent, can open pull requests that only edit files you already listed. GitHub will not merge a builder PR that steps outside that list.
 
-slop-stop lets a non-engineer (or their agent) open pull requests that can only **edit existing files** you already listed. GitHub will not merge a builder PR that steps outside that list.
+## Why slop-stop
 
-## Why slop-stop exists and its origin
+At [Arlo](https://meetarlo.ai), the weekly CMO report is driven by markdown skill instructions. Engineers own Python, pipelines, and infra. The report's voice and analysis rules change often, and the people who should change them are not engineers.
 
-At [Arlo](https://meetarlo.ai), the weekly CMO report is driven by markdown skill instructions. Engineers own Python, pipelines, and infra. The report's voice, analysis rules, and recommendations change weekly, and the people who should change them are not engineers.
+We built an isolated agent with a hard file allowlist so a non-technical co-founder could open safe PRs. slop-stop is that pattern as a product: a policy file, trusted CI, CODEOWNERS, and two agent skills. The name is the point. Stop the slop from reaching `main`.
 
-We built an isolated agent with a hard file allowlist and a plain-language workflow so a non-technical co-founder could open safe PRs without touching production code. slop-stop is that pattern as a product: a policy file, trusted CI on GitHub, CODEOWNERS, and portable agent instructions that speak human (works with any coding agent that can read repo docs or skill files).
-
-The name is the point. Stop the slop from reaching `main`.
-
-## How it works
-
-Two roles. Everything else follows from that.
+Two roles. Anyone listed in `builders` always takes the builder path, even if they are also an owner. Git author fields are ignored.
 
 | Role | GitHub access | What they can change |
 |------|---------------|----------------------|
-| **Owner** (not in `builders`) | Admin on the repo | Anything, including policy, CI, and CODEOWNERS. Their PRs skip zone rules on any branch. |
-| **Builder** | Write, never Admin (enforced by `join`/`doctor`, not `check`) | Modify existing files inside **one** zone, branch `slop-stop/<login>/<slug>`, PR into `target_branch` only. |
+| **Owner** (not in `builders`) | Admin | Anything, including policy and CI. Their PRs skip zone rules. |
+| **Builder** | Write, never Admin | Existing files in **one** zone, on branch `slop-stop/<login>/<slug>`, into `target_branch` only. |
 
-Anyone in `builders` always follows the builder path, even if they are also an owner. Git commit author fields are ignored (they are easy to fake).
+A **zone** is a named allowlist of existing files, a reviewer (`escalate_to`), and either a `safety_check` shell command or an explicit `accept_unguarded`. Optional invariants can require a literal string to stay in a file, or freeze markdown headings. A top-level `deny` list blocks paths even when a zone would allow them.
 
-**Policy is a YAML file.** A zone is a named allowlist: which existing files the builder may edit, who reviews them (`escalate_to`), and either a `safety_check` shell command or an explicit `accept_unguarded`. Optional invariants can require a literal string to stay in the file, or freeze markdown headings. A top-level `deny` list blocks paths even if a zone would allow them.
+**CI is the gate.** Local `check` is for the agent before it opens the PR. Two workflows, so a required check is never skipped:
 
-There are two policy files you will see. They are not equals:
+- `slop-stop/check` runs on `pull_request_target`. It reads policy from the PR **base** and treats the diff as data. It never runs PR-head code.
+- `slop-stop/safety` runs on `pull_request`. It checks out the PR head and runs that zone's `safety_check`. That job runs PR-head code, so the command must be read-only and the job gets no secrets.
 
-- `--policy-file` on `init` is a **draft**. `init` reads it once, then copies it.
-- `.slop-stop/policy.yml` is the **canonical** file. `join`, `doctor`, `check`, and `safety` only read this path. `check` and `safety` read it from the **PR base commit** (usually `main`), not from the PR head and not from a leftover draft at the repo root.
+`check` fails a builder PR when:
 
-If a draft and `.slop-stop/policy.yml` differ, the draft is dead weight. Re-running `init` with a stale draft overwrites the canonical file.
+- the PR author login does not match the branch login, or the branch is not `slop-stop/<login>/<slug>`
+- the diff leaves the zone, hits `deny`, or touches more than one zone
+- a file is added, deleted, renamed, copied, or changes type (including binary patches)
+- the diff touches `.slop-stop/**`, `.github/**`, CODEOWNERS, `AGENTS.md`, `CLAUDE.md`, `.cursor/**`, `.claude/**`, dependency manifests, or `.env*`
+- added lines hide Unicode, look like secrets, or break a zone invariant
+- a zone has neither `safety_check` nor `accept_unguarded`
 
-**CI is the real gate.** Local agent workflows and `check` are convenience. Two workflow files, two events, so a required check is never "skipped":
+v1 is GitHub. `doctor` audits branch protection; you still set it in GitHub Settings. Threat model: [tools/slop-stop/docs/threat-model.md](tools/slop-stop/docs/threat-model.md).
 
-- `slop-stop/check` runs on `pull_request_target`. Trusted. Uses the pinned Action from this repo. Reads policy from the **base** commit. Treats the diff as data. **Never executes PR-head code.**
-- `slop-stop/safety` runs on `pull_request`. Advisory. Checks out the PR head and runs that zone's `safety_check`. This **does** run PR-head code, so the owner must pick a read-only test and grant the job no secrets.
+## Installation
 
-Owner-only PRs (in `owners`, not in `builders`, any branch) pass `check` without looking at the diff. Listed builders must use `slop-stop/<login>/<slug>` and target `policy.target_branch`. A builder PR whose author login does not match the branch login fails.
+Needs Node 20+ and a GitHub `origin` remote. Run commands from the **app repo** root (the repo builders will edit).
 
-CODEOWNERS (written by `init`) makes owners review policy and CI, and makes each zone's `escalate_to` review the allowlisted paths. Branch protection / rulesets must require a PR, one approval including a CODEOWNER, dismiss stale approvals, block force pushes, and require both status checks. `doctor` audits that. It does not change GitHub for you.
+```bash
+npx @meet-arlo/slop-stop --help
+```
 
-Threat model: [tools/slop-stop/docs/threat-model.md](tools/slop-stop/docs/threat-model.md).
+Nothing to install globally. `npx` runs the published package.
 
-## What it does, and what you get
+To change slop-stop itself, from this repo:
 
-On the **consumer** repo (your app), `init` writes:
+```bash
+npm ci
+npm test
+npm run build
+npm run bundle -w @meet-arlo/slop-stop   # rebuild action/index.cjs; commit it
+```
 
-- `.slop-stop/policy.yml` — builders, owners, target branch, deny globs, zones
-- a marked `# slop-stop:start` block in CODEOWNERS (existing file if GitHub already has one, else a new root `CODEOWNERS`)
-- `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml`, pinned to `Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.1.0`
-- a marked `<!-- slop-stop:start -->` block in `AGENTS.md`
+## Setup
 
-Re-running `init` replaces only those marked blocks. Text outside the markers stays.
-
-For a **builder PR**, `check` fails on:
-
-- unknown builder, or PR author ≠ branch login
-- paths outside every zone, or matching `deny`
-- more than one zone in one PR
-- new, deleted, renamed, or copied files; file type changes; binary patches
-- edits to `.slop-stop/**`, `.github/**`, CODEOWNERS, `AGENTS.md`, `CLAUDE.md`, `.cursor/**`, `.claude/**`
-- dependency manifests and `.env*`
-- hidden or bidirectional Unicode in added lines
-- secrets (gitleaks if installed, else a small built-in regex set)
-- zone invariants
-- a zone with no `safety_check` and no `accept_unguarded`
-
-You also get two **agent workflow docs** (markdown under `tools/slop-stop/skills/` in this repo; copy or symlink them into whatever your team uses — `AGENTS.md`, Claude/Cursor skill dirs, etc.). They are not auto-invoked; the human or agent loads them on purpose:
-
-- [slop-stop-setup](tools/slop-stop/skills/slop-stop-setup/SKILL.md) — owner interviews for policy, runs `init`, walks `doctor` failures
-- [guarded-change](tools/slop-stop/skills/guarded-change/SKILL.md) — builder: `join`, one zone, local `check`, PR from `slop-stop/<login>/<slug>`
-
-What v1 does **not** do: GitLab/Bitbucket, applying GitHub settings via API, AI reviewers as a merge gate, builders adding dependencies.
-
-## Setup and installation
-
-Needs Node 20+ and a GitHub `origin` remote. Run commands from the **app repo** root, not from this repo, unless you are changing slop-stop itself.
-
-### Owner: first install
+The owner does this once per app repo, then again only when the allowlist or reviewers change. Builders do not run `init`.
 
 1. Invite each builder with **Write** (not Admin).
-2. Draft a policy. Start from [tools/slop-stop/examples/demo-policy.yml](tools/slop-stop/examples/demo-policy.yml). Every zone needs `allow`, `escalate_to`, and either `safety_check` or `accept_unguarded`.
+2. Draft a policy. Start from [tools/slop-stop/examples/demo-policy.yml](tools/slop-stop/examples/demo-policy.yml).
 3. From the app repo:
 
    ```bash
@@ -89,140 +65,111 @@ Needs Node 20+ and a GitHub `origin` remote. Run commands from the **app repo** 
    npx @meet-arlo/slop-stop doctor
    ```
 
-4. Commit what `init` wrote to the target branch (`main` unless policy says otherwise).
-5. Fix every `[FAIL]` in GitHub Settings until `doctor` passes. Add the two required status checks **after** the workflows exist on the target branch, or every PR waits on checks that never run.
-6. Point builders at the [guarded-change](tools/slop-stop/skills/guarded-change/SKILL.md) workflow doc (however your agent product loads instructions).
+4. Commit what `init` wrote and push it to the target branch (`main` unless the policy says otherwise).
+5. Fix every `[FAIL]` until `doctor` passes. Require a PR, one approval including a CODEOWNER, dismiss stale approvals, block force pushes, require both status checks, and turn auto-merge off. Add the two status checks **after** the workflows are on the target branch, or every PR waits on checks that never run.
 
-Prove it: open a PR that touches a file outside the zone. `slop-stop/check` should fail.
+`init` writes `.slop-stop/policy.yml`, a marked `# slop-stop:start` block in CODEOWNERS, `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml` (pinned to a tag in this repo), and a marked `<!-- slop-stop:start -->` block in `AGENTS.md`. Re-running `init` replaces only those marked blocks.
 
-### Owner: change the policy later
+**One policy file counts.** `--policy-file` is a draft. `init` copies it to `.slop-stop/policy.yml`, and every later command reads that path. `check` and `safety` read it from the PR **base** commit, so a new zone does nothing until that commit is on the target branch. When you re-run `init`, pass `.slop-stop/policy.yml`. A leftover draft at the repo root overwrites the canonical file.
 
-`.slop-stop/policy.yml` is the file to edit. Builders cannot change it (trap + CODEOWNERS).
+Later edits:
 
-- **Policy-only** (builders list, `deny`, `safety_check`, invariants): edit `.slop-stop/policy.yml`, owner-PR to the target branch.
-- **Also regenerates CODEOWNERS / workflows / AGENTS.md** (zones, `allow`, `escalate_to`, `owners`, `target_branch`): edit the YAML, then
+- Builders, `deny`, `safety_check`, invariants: edit `.slop-stop/policy.yml` and open an owner PR.
+- Zones, `allow`, `escalate_to`, `owners`, `target_branch`: edit that same file, then run `npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml` so CODEOWNERS, workflows, and `AGENTS.md` refresh.
 
-  ```bash
-  npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml
-  ```
+## Skills
 
-  Passing the canonical file as `--policy-file` dumps it back onto itself and refreshes the marked blocks.
+Two markdown skills. They are workflow instructions, loaded on purpose (`disable-model-invocation: true` in each file). Copy or symlink the skill folders into the place your agent reads skills. For Cursor, that is `.cursor/skills/` in the app repo, or your user skills directory. `init` does not copy the skill files. It only points `AGENTS.md` at `guarded-change`.
 
-`check` and `safety` read policy from the PR **base**. A new zone does nothing for builder PRs until that commit is on the target branch.
+Use one skill per seat:
 
-Do not keep a stale draft (for example `slop-policy.yml` at repo root) and pass it to `init` later. That overwrites the canonical file.
+| Skill | Who | When |
+|-------|-----|------|
+| [slop-stop-setup](tools/slop-stop/skills/slop-stop-setup/SKILL.md) | Owner | First install, and when zones or reviewers change |
+| [guarded-change](tools/slop-stop/skills/guarded-change/SKILL.md) | Builder | Every wording or prompt change inside a zone |
 
-### Builder
+Engineers who are not in `builders` keep their normal PRs for code, CI, and infra. An engineer who is also listed as a builder still has to use the builder branch and stay inside one zone.
 
-Load the [guarded-change](tools/slop-stop/skills/guarded-change/SKILL.md) workflow in your agent (or follow it by hand). First run:
+### slop-stop-setup
 
-```bash
-npx @meet-arlo/slop-stop join
+Owner skill. It interviews you, writes a draft policy, runs `init`, and walks every `doctor` failure until GitHub matches the policy.
+
+Load it when you are putting slop-stop on a repo, adding a zone, or changing who reviews a zone. Day-to-day copy edits use `guarded-change` instead.
+
+A session should go like this:
+
+1. Confirm GitHub, admin on the repo, and `gh auth login` (or `GITHUB_TOKEN`).
+2. Collect builders, owners, target branch, and each zone: name, allow globs, `escalate_to`, and a `safety_check` or `accept_unguarded`. Show the YAML and wait for an explicit yes before `init`.
+3. Run `init`. Commit and push to the target branch before any builder starts.
+4. Run `doctor`. For each `[FAIL]`, say what it means in one sentence, give the Settings path from the output, wait, and re-run. Add the two status checks last.
+5. Invite builders with Write, and tell them to load `guarded-change`.
+
+Prompt: "Use the slop-stop-setup skill. Sam should be able to edit homepage copy only."
+
+Done when `doctor` is clean and every zone has a `safety_check` or a written `accept_unguarded`.
+
+### guarded-change
+
+Builder skill. It turns a plain-English request into one allowlisted PR. If the request needs files outside every zone, the agent stops and writes a short handoff for `escalate_to`. It does not edit those files.
+
+Load it for each builder change. If the repo has no `.slop-stop/policy.yml`, stop and send the person back to the owner.
+
+A session should go like this:
+
+1. `npx @meet-arlo/slop-stop join` once per machine. It writes nothing. It checks the token is a listed builder with Write (not Admin), then runs a builder-scoped `doctor`. A green join line followed by a failure means identity passed and GitHub settings did not.
+2. Map the request to exactly one zone in `.slop-stop/policy.yml`. If it is ambiguous, ask once.
+3. Edit existing files inside that zone's `allow` globs. Keep invariants (`require_literal`, `freeze_headings`). Show a plain-language summary and `git diff` before committing.
+4. Run local `check`, then the zone's `safety_check`. Fix failures before opening the PR.
+5. After the human approves: branch `slop-stop/<login>/<slug>`, one-line commit, push, PR into `target_branch` only, review requested from `escalate_to`. Leave auto-merge off.
+
+Prompt: "Use the guarded-change skill. Change the homepage hero so it says we publish a weekly report."
+
+## Working example
+
+Alex owns the repo. Sam should change homepage copy and nothing else.
+
+**Alex loads slop-stop-setup.** Invite `sam` with Write. Approve this draft:
+
+```yaml
+version: 1
+builders: [sam]
+owners: [alex]
+target_branch: main
+deny: ['**/*.ts', '**/package*.json']
+zones:
+  - id: marketing-copy
+    name: Marketing copy
+    description: Homepage hero and subhead
+    allow: ['content/home.md']
+    safety_check: 'npm test -- --grep home'
+    escalate_to: alex
 ```
 
-`join` writes nothing. It proves the token is a listed builder with Write-not-Admin, then runs a builder-scoped `doctor`. If it fails, stop and fix that before editing.
-
-Then describe the change in plain English. Stay in one zone, run local `check` (and `safety_check` if set), and open a PR from `slop-stop/<your-login>/<slug>` to the policy `target_branch`. Request review from the zone's `escalate_to`.
-
-### Developing slop-stop (this repo)
-
 ```bash
-npm ci
-npm run build -w @meet-arlo/slop-stop
-npm test -w @meet-arlo/slop-stop
-npm run bundle -w @meet-arlo/slop-stop   # rebuild action/index.cjs; commit it
-```
-
-This repo's own workflow (`.github/workflows/slop-stop.yml`) builds, tests, and fails if the committed Action bundle does not match source.
-
-## Commands
-
-All commands are `npx @meet-arlo/slop-stop <command>`. `--repo-root` defaults to the current directory; slop-stop then finds the git root.
-
-### `init` (owner)
-
-Writes guardrail files into the consumer repo, then runs owner `doctor`.
-
-```bash
-npx @meet-arlo/slop-stop init --policy-file ./path/to/draft-policy.yml
-```
-
-- **Reads:** the draft you passed. Validates it (version 1, builders, owners, target branch, at least one zone).
-- **Writes:** `.slop-stop/policy.yml` (overwrite), CODEOWNERS marked block, two workflows, `AGENTS.md` marked block.
-- **Does not write:** GitHub settings. You still click those after `doctor`.
-- Needs `origin` parseable as `github.com/owner/repo`. Token optional here; without one, `doctor` will fail on auth after the files are written.
-
-### `doctor` (owner; also run by `init` and `join`)
-
-Read-only GitHub audit. Does not change settings.
-
-```bash
+npx @meet-arlo/slop-stop init --policy-file ./draft-policy.yml
 npx @meet-arlo/slop-stop doctor
 ```
 
-- **Reads:** `.slop-stop/policy.yml` on disk (working tree), plus GitHub via `GITHUB_TOKEN` or `gh auth token`.
-- **Owner audience** (this command): rulesets **and** classic branch protection; auto-merge must be off; every builder must be Write or Maintain, not Admin.
-- **Builder audience** (via `join`): rulesets only (classic protection needs admin to read). No rulesets → `INFO`, not a fail. Also checks this user cannot bypass the ruleset.
-- Exit `0` if every item is pass, info, or not-enforceable. Any `[FAIL]` → exit `1`. Prints the Settings path for each fail.
+Commit `.slop-stop/`, the two workflows, the CODEOWNERS block, and the `AGENTS.md` block. Push to `main`. Clear every `[FAIL]`, including both required checks.
 
-### `join` (builder)
-
-Handshake. Writes nothing. Registers nothing.
+**Sam loads guarded-change.** "Change the hero so it says we publish a weekly report, not a dashboard."
 
 ```bash
 npx @meet-arlo/slop-stop join
-# optional: --builder <login>  (must match the token)
-```
-
-Order:
-
-1. Load `.slop-stop/policy.yml` from the working tree. Missing → fail (`run init first`).
-2. Parse `origin` for owner/repo.
-3. Token from `GITHUB_TOKEN` or `gh auth token`.
-4. `users.getAuthenticated` → login. `--builder` must match if passed.
-5. Login must be in `policy.builders`. Being an owner is not enough.
-6. Collaborator role must not be `admin`.
-7. Print `join: <login> has <role> access (ok)`.
-8. Run `doctor` with `audience: builder`. That step is what requires Write (or Maintain). Exit code is doctor's.
-
-If `join` prints the green line and then fails, identity passed and GitHub settings did not.
-
-### `check` (CI and local)
-
-Zone, trap, identity, invariant, and secret checks. This is the merge gate.
-
-```bash
+git checkout -b slop-stop/sam/weekly-report-hero
+# edit content/home.md only
 npx @meet-arlo/slop-stop check \
   --base-ref origin/main \
   --base-branch main \
   --head-ref HEAD \
-  --head-branch "$(git branch --show-current)" \
-  --pr-author YOUR_GITHUB_LOGIN
+  --head-branch slop-stop/sam/weekly-report-hero \
+  --pr-author sam
+npm test -- --grep home
 ```
 
-All flags are required. In GitHub Actions, `init`'s workflow passes them from the pull-request event (`base.sha`, `base.ref`, `head.sha`, `head.ref`, `user.login`).
+Open the PR into `main` and request review from `alex`.
 
-- **Reads policy from the base ref**, not the working tree. No policy on base → fail closed.
-- Builder branches: diffs base…head and applies the rules in [What it does](#what-it-does-and-what-you-get). Base branch must equal `policy.target_branch`.
-- Owner-only authors on any branch: pass without inspecting the diff.
-- Builders off the `slop-stop/…` prefix: fail (`builder_branch_required`).
-- Everyone else: fail (`non_owner_branch`).
-
-### `safety` (CI; local if you have checked out the PR head)
-
-Runs each touched zone's `safety_check` against the current tree.
-
-```bash
-npx @meet-arlo/slop-stop safety \
-  --base-ref origin/main \
-  --head-ref HEAD \
-  --head-branch "$(git branch --show-current)"
-```
-
-- **Reads policy from the base ref.**
-- Skips (exit 0) if the branch is not a listed builder branch.
-- Runs `/bin/sh -c <safety_check>` with a locked-down `PATH` (no inherited parent PATH). No secrets in the workflow `init` writes.
-- One command per zone touched. First failure → exit 1.
+A second PR that also touches `src/app.ts` fails `slop-stop/check`. So does a branch named `sam/quick-fix`. A three-zone sample (invariants and an unguarded zone) is in [tools/slop-stop/examples/demo-policy.yml](tools/slop-stop/examples/demo-policy.yml).
 
 ---
 
