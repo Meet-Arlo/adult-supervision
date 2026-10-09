@@ -1,35 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { colorEnabled, createStyle } from '../src/style.js';
+import { createStyle, stdoutStyle } from '../src/style.js';
 import { formatDoctorReport, type DoctorReport } from '../src/doctor.js';
 import { formatCheckReport, type CheckResult } from '../src/check.js';
 
 const ANSI = /\u001b\[/;
-const tty = { isTTY: true } as NodeJS.WriteStream;
-const pipe = { isTTY: false } as NodeJS.WriteStream;
-
-describe('colorEnabled', () => {
-  it('is on for a TTY', () => {
-    expect(colorEnabled(tty, {})).toBe(true);
-  });
-
-  it('is off when piped', () => {
-    expect(colorEnabled(pipe, {})).toBe(false);
-  });
-
-  it('respects NO_COLOR over everything', () => {
-    expect(colorEnabled(tty, { NO_COLOR: '1', FORCE_COLOR: '1' })).toBe(false);
-  });
-
-  it('respects FORCE_COLOR when piped, and FORCE_COLOR=0 on a TTY', () => {
-    expect(colorEnabled(pipe, { FORCE_COLOR: '1' })).toBe(true);
-    expect(colorEnabled(tty, { FORCE_COLOR: '0' })).toBe(false);
-  });
-
-  it('is on in GitHub Actions logs and off for TERM=dumb', () => {
-    expect(colorEnabled(pipe, { GITHUB_ACTIONS: 'true' })).toBe(true);
-    expect(colorEnabled(tty, { TERM: 'dumb' })).toBe(false);
-  });
-});
 
 const report: DoctorReport = {
   ok: false,
@@ -39,6 +13,12 @@ const report: DoctorReport = {
     { id: 'c', status: 'not_enforceable', title: 'Manual item', detail: 'Check by hand.' },
   ],
 };
+
+describe('stdoutStyle', () => {
+  it('always enables ANSI for CLI output', () => {
+    expect(stdoutStyle().bold('x')).toMatch(ANSI);
+  });
+});
 
 describe('formatDoctorReport', () => {
   it('prints numbered fix steps, a summary, and no ANSI codes when color is off', () => {
