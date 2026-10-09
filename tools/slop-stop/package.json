@@ -1,6 +1,6 @@
 {
   "name": "@meet-arlo/slop-stop",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "Guardrailed agent development for non-technical builders",
   "license": "MIT",
   "type": "module",

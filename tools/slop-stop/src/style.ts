@@ -32,24 +32,10 @@ export function createStyle(enabled: boolean): Style {
   };
 }
 
-/** Follows the NO_COLOR / FORCE_COLOR conventions; Actions logs render ANSI even without a TTY. */
-export function colorEnabled(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.NO_COLOR) {
-    return false;
-  }
-  if (env.FORCE_COLOR !== undefined) {
-    return env.FORCE_COLOR !== '0';
-  }
-  if (env.GITHUB_ACTIONS === 'true') {
-    return true;
-  }
-  return Boolean(stream.isTTY) && env.TERM !== 'dumb';
-}
-
 export function stdoutStyle(): Style {
-  return createStyle(colorEnabled(process.stdout));
+  return createStyle(true);
 }
 
 export function stderrStyle(): Style {
-  return createStyle(colorEnabled(process.stderr));
+  return createStyle(true);
 }
