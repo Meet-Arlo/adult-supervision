@@ -90,13 +90,13 @@ Use one skill per seat:
 
 Engineers who are not in `builders` keep their normal PRs for code, CI, and infra. An engineer who is also listed as a builder still has to use the builder branch and stay inside one zone.
 
-### slop-stop-setup
+## slop-stop-setup
 
 Owner skill. It interviews you, writes a draft policy, runs `init`, and walks every `doctor` failure until GitHub matches the policy.
 
 Load it when you are putting slop-stop on a repo, adding a zone, or changing who reviews a zone. Day-to-day copy edits use `guarded-change` instead.
 
-A session should go like this:
+### A session should go like this:
 
 1. Confirm GitHub, admin on the repo, and `gh auth login` (or `GITHUB_TOKEN`).
 2. Collect builders, owners, target branch, and each zone: name, allow globs, `escalate_to`, and a `safety_check` or `accept_unguarded`. Show the YAML and wait for an explicit yes before `init`.
@@ -104,17 +104,19 @@ A session should go like this:
 4. Run `doctor`. For each `[FAIL]`, say what it means in one sentence, give the Settings path from the output, wait, and re-run. Add the two status checks last.
 5. Invite builders with Write, and tell them to load `guarded-change`.
 
+```bash
 Prompt: "Use the slop-stop-setup skill. Sam should be able to edit homepage copy only."
+```
 
 Done when `doctor` is clean and every zone has a `safety_check` or a written `accept_unguarded`.
 
-### guarded-change
+## guarded-change
 
 Builder skill. It turns a plain-English request into one allowlisted PR. If the request needs files outside every zone, the agent stops and writes a short handoff for `escalate_to`. It does not edit those files.
 
 Load it for each builder change. If the repo has no `.slop-stop/policy.yml`, stop and send the person back to the owner.
 
-A session should go like this:
+### A session should go like this:
 
 1. `npx @meet-arlo/slop-stop join` once per machine. It writes nothing. It checks the token is a listed builder with Write (not Admin), then runs a builder-scoped `doctor`. A green join line followed by a failure means identity passed and GitHub settings did not.
 2. Map the request to exactly one zone in `.slop-stop/policy.yml`. If it is ambiguous, ask once.
@@ -122,7 +124,9 @@ A session should go like this:
 4. Run local `check`, then the zone's `safety_check`. Fix failures before opening the PR.
 5. After the human approves: branch `slop-stop/<login>/<slug>`, one-line commit, push, PR into `target_branch` only, review requested from `escalate_to`. Leave auto-merge off.
 
+```bash
 Prompt: "Use the guarded-change skill. Change the homepage hero so it says we publish a weekly report."
+```
 
 ## Working example
 
