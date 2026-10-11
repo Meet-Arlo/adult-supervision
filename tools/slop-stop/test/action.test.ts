@@ -96,10 +96,10 @@ describe('templates', () => {
     expect(mergeMarkedBlock('', block, AGENTS_BLOCK_START, AGENTS_BLOCK_END)).toBe(block);
   });
 
-  it('copies packaged skills into .cursor/skills and points AGENTS.md at them', () => {
+  it('copies packaged skills into skills/ and points AGENTS.md at them', () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-stop-init-'));
-    const otherSkill = path.join(repo, '.cursor', 'skills', 'other', 'SKILL.md');
-    const staleSkillFile = path.join(repo, '.cursor', 'skills', 'guarded-change', 'old.md');
+    const otherSkill = path.join(repo, 'skills', 'other', 'SKILL.md');
+    const staleSkillFile = path.join(repo, 'skills', 'guarded-change', 'old.md');
     fs.mkdirSync(path.dirname(otherSkill), { recursive: true });
     fs.writeFileSync(otherSkill, 'keep\n');
     fs.mkdirSync(path.dirname(staleSkillFile), { recursive: true });
@@ -107,11 +107,11 @@ describe('templates', () => {
 
     try {
       const written = writeInitArtifacts(repo, policy);
-      expect(written).toContain('.cursor/skills/guarded-change/SKILL.md');
-      expect(written).toContain('.cursor/skills/slop-stop-setup/SKILL.md');
+      expect(written).toContain('skills/guarded-change/SKILL.md');
+      expect(written).toContain('skills/slop-stop-setup/SKILL.md');
 
       const installed = fs.readFileSync(
-        path.join(repo, '.cursor', 'skills', 'guarded-change', 'SKILL.md'),
+        path.join(repo, 'skills', 'guarded-change', 'SKILL.md'),
         'utf8',
       );
       const packaged = fs.readFileSync(

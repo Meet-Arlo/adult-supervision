@@ -127,8 +127,7 @@ async function githubItems(ctx: DoctorContext): Promise<DoctorItem[]> {
       status: 'info',
       title: 'AI code reviewers',
       detail:
-        'If Copilot or other AI reviewers are enabled, treat them as advisory only. ' +
-        'Human CODEOWNER approval is the merge gate.',
+        'Automated reviewers are advisory. Human CODEOWNER approval is the merge gate.',
     },
   );
 

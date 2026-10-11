@@ -13,8 +13,8 @@ export const SLOP_STOP_SKILLS_URL =
 export const CHECK_WORKFLOW_FILE = 'slop-stop-check.yml';
 export const SAFETY_WORKFLOW_FILE = 'slop-stop-safety.yml';
 
-/** Cursor loads these from the app repo. Other folders under `.cursor/skills/` are left alone. */
-export const INSTALLED_SKILLS_REL = '.cursor/skills';
+/** App repos load these from `skills/`. Other folders there are left alone. */
+export const INSTALLED_SKILLS_REL = 'skills';
 export const INSTALLED_SKILL_NAMES = ['guarded-change', 'slop-stop-setup'] as const;
 const MAX_SKILL_TREE_DEPTH = 4;
 

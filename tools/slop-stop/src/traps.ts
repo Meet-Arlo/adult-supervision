@@ -6,9 +6,8 @@ const GUARDRAIL_PATTERNS = [
   '**/CODEOWNERS',
   '.github/**',
   '**/AGENTS.md',
-  '**/CLAUDE.md',
-  '.cursor/**',
-  '.claude/**',
+  'skills/guarded-change/**',
+  'skills/slop-stop-setup/**',
 ];
 
 const MANIFEST_PATTERNS = [

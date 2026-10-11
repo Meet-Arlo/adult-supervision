@@ -30,7 +30,7 @@
 
 - Out-of-zone paths and global `deny` globs
 - PR author must match the builder in the branch prefix
-- Edits to `.slop-stop/**`, `.github/**`, any `CODEOWNERS`, `AGENTS.md`, or `CLAUDE.md`, agent hook dirs
+- Edits to `.slop-stop/**`, `.github/**`, any `CODEOWNERS`, `AGENTS.md`, or installed skill folders
 - New, deleted, renamed, or copied files; file type changes (e.g. file to symlink); dependency manifests; `.env*`; binary patches
 - Bidirectional / zero-width Unicode in added lines
 - gitleaks (or built-in secret patterns if gitleaks missing)
