@@ -1,6 +1,6 @@
 {
   "name": "@meet-arlo/slop-stop",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Guardrailed agent development for non-technical builders",
   "license": "MIT",
   "type": "module",
@@ -25,7 +25,8 @@
     "build": "rm -f dist/canary.js dist/canary.d.ts && tsc",
     "bundle": "esbuild src/action-main.ts --bundle --platform=node --target=node20 --format=cjs --outfile=action/index.cjs",
     "test": "vitest run",
-    "prepublishOnly": "npm run build && npm test"
+    "copy-skills": "rm -rf skills && cp -R ../../skills skills",
+    "prepublishOnly": "npm run build && npm test && npm run copy-skills"
   },
   "dependencies": {
     "@octokit/rest": "^21.1.1",

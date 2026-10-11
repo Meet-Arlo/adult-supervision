@@ -112,7 +112,7 @@ program
 
 program
   .command('init')
-  .description('Write policy, CODEOWNERS, workflows, and AGENTS.md block (owner)')
+  .description('Write policy, CODEOWNERS, workflows, skills, and AGENTS.md block (owner)')
   .option('--repo-root <path>', 'Git repository root', process.cwd())
   .requiredOption('--policy-file <path>', 'Policy YAML with builders, owners, and zones')
   .action(async (opts) => {

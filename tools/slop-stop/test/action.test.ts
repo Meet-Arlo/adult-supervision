@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseNameStatus } from '../src/git.js';
 import { readInput, runFromActionEnv } from '../src/github-action.js';
@@ -5,9 +8,11 @@ import {
   AGENTS_BLOCK_END,
   AGENTS_BLOCK_START,
   mergeMarkedBlock,
+  packagedSkillsRoot,
   renderCheckWorkflow,
   renderSafetyWorkflow,
   SLOP_STOP_ACTION_REF,
+  writeInitArtifacts,
 } from '../src/templates.js';
 import { parsePolicyYaml } from '../src/policy.js';
 
@@ -89,6 +94,41 @@ describe('templates', () => {
   it('adds a block to an empty file without leading blank lines', () => {
     const block = `${AGENTS_BLOCK_START}\nhi\n${AGENTS_BLOCK_END}\n`;
     expect(mergeMarkedBlock('', block, AGENTS_BLOCK_START, AGENTS_BLOCK_END)).toBe(block);
+  });
+
+  it('copies packaged skills into skills/ and points AGENTS.md at them', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-stop-init-'));
+    const otherSkill = path.join(repo, 'skills', 'other', 'SKILL.md');
+    const staleSkillFile = path.join(repo, 'skills', 'guarded-change', 'old.md');
+    fs.mkdirSync(path.dirname(otherSkill), { recursive: true });
+    fs.writeFileSync(otherSkill, 'keep\n');
+    fs.mkdirSync(path.dirname(staleSkillFile), { recursive: true });
+    fs.writeFileSync(staleSkillFile, 'stale\n');
+
+    try {
+      const written = writeInitArtifacts(repo, policy);
+      expect(written).toContain('skills/guarded-change/SKILL.md');
+      expect(written).toContain('skills/slop-stop-setup/SKILL.md');
+
+      const installed = fs.readFileSync(
+        path.join(repo, 'skills', 'guarded-change', 'SKILL.md'),
+        'utf8',
+      );
+      const packaged = fs.readFileSync(
+        path.join(packagedSkillsRoot(), 'guarded-change', 'SKILL.md'),
+        'utf8',
+      );
+      expect(installed).toBe(packaged);
+      expect(fs.existsSync(staleSkillFile)).toBe(false);
+      expect(fs.readFileSync(otherSkill, 'utf8')).toBe('keep\n');
+
+      const agents = fs.readFileSync(path.join(repo, 'AGENTS.md'), 'utf8');
+      expect(agents).toContain(
+        'https://github.com/Meet-Arlo/adult-supervision/tree/main/skills',
+      );
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it('replaces only the marked block and keeps the rest of the file', () => {

@@ -1,7 +1,6 @@
 ---
 name: guarded-change
 description: Builder workflow for slop-stop zones. First run joins and verifies permissions; then routes a plain-English request to one zone, edits allowlisted files only, runs local check and safety_check, and opens a PR from slop-stop/builder/slug with CODEOWNER review. Use for safe non-engineering edits.
-disable-model-invocation: true
 ---
 
 # guarded-change (builder)

@@ -1,14 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import type { Policy } from './policy.js';
 
 /** Consumer workflows pin this repo + tag in `uses:`; the tag must exist on GitHub. */
 export const SLOP_STOP_ACTION_REF = 'Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.2.1';
 export const SLOP_STOP_PACKAGE = '@meet-arlo/slop-stop';
+export const SLOP_STOP_SKILLS_URL =
+  'https://github.com/Meet-Arlo/adult-supervision/tree/main/skills';
 
 export const CHECK_WORKFLOW_FILE = 'slop-stop-check.yml';
 export const SAFETY_WORKFLOW_FILE = 'slop-stop-safety.yml';
+
+/** App repos load these from `skills/`. Other folders there are left alone. */
+export const INSTALLED_SKILLS_REL = 'skills';
+export const INSTALLED_SKILL_NAMES = ['guarded-change', 'slop-stop-setup'] as const;
+const MAX_SKILL_TREE_DEPTH = 4;
 
 /** GitHub reads the first CODEOWNERS it finds, in this order. */
 const CODEOWNERS_LOCATIONS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
@@ -45,9 +53,10 @@ export function renderAgentsBlock(policy: Policy): string {
     AGENTS_BLOCK_START,
     '## slop-stop (builder guardrails)',
     '',
-    'If you are making product copy or prompt changes as a **builder**, follow the',
-    '`guarded-change` agent workflow (`tools/slop-stop/skills/guarded-change/SKILL.md` in',
-    'the slop-stop package, or your team\'s copy). Stay inside your zone; do not edit Python, CI, or policy.',
+    'If you are making product copy or prompt changes as a **builder**, load the',
+    '`guarded-change` skill from the slop-stop skills directory:',
+    SLOP_STOP_SKILLS_URL,
+    'Stay inside your zone. Do not edit Python, CI, or policy.',
     '',
     'Before opening a PR, run:',
     '',
@@ -172,6 +181,64 @@ export function codeownersPath(repoRoot: string): string {
   return path.join(repoRoot, found ?? 'CODEOWNERS');
 }
 
+const PACKAGED_SKILL_MARKER = path.join('guarded-change', 'SKILL.md');
+
+/**
+ * Repo source is `/skills`. The published package copies that folder next to `dist/`.
+ * Prefer the repo copy when this file is running from `tools/slop-stop`.
+ */
+export function packagedSkillsRoot(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, '..', '..', '..', 'skills'),
+    path.resolve(here, '..', 'skills'),
+  ];
+  const found = candidates.find((dir) => fs.existsSync(path.join(dir, PACKAGED_SKILL_MARKER)));
+  if (!found) {
+    throw new Error(
+      `Could not find slop-stop skills (${PACKAGED_SKILL_MARKER}). Looked in: ${candidates.join(', ')}`,
+    );
+  }
+  return found;
+}
+
+function listSkillFiles(dir: string, depth: number): string[] {
+  if (depth > MAX_SKILL_TREE_DEPTH) {
+    throw new Error(`Skill directory is nested more than ${MAX_SKILL_TREE_DEPTH} levels: ${dir}`);
+  }
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listSkillFiles(full, depth + 1));
+    } else if (entry.isFile()) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+/** Copies the two packaged skills into the app repo. Replaces those folders on each init. */
+export function installPackagedSkills(repoRoot: string): string[] {
+  const packagedRoot = packagedSkillsRoot();
+  const written: string[] = [];
+  for (const name of INSTALLED_SKILL_NAMES) {
+    const srcDir = path.join(packagedRoot, name);
+    const skillFile = path.join(srcDir, 'SKILL.md');
+    if (!fs.existsSync(skillFile)) {
+      throw new Error(
+        `Packaged skill "${name}" is missing ${skillFile}. Reinstall ${SLOP_STOP_PACKAGE}.`,
+      );
+    }
+    const destDir = path.join(repoRoot, INSTALLED_SKILLS_REL, name);
+    fs.mkdirSync(path.dirname(destDir), { recursive: true });
+    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.cpSync(srcDir, destDir, { recursive: true });
+    written.push(...listSkillFiles(destDir, 0));
+  }
+  return written;
+}
+
 function writeMergedFile(filePath: string, block: string, start: string, end: string): void {
   const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
   fs.writeFileSync(filePath, mergeMarkedBlock(existing, block, start, end), 'utf8');
@@ -200,7 +267,9 @@ export function writeInitArtifacts(repoRoot: string, policy: Policy): string[] {
   const agentsPath = path.join(repoRoot, 'AGENTS.md');
   writeMergedFile(agentsPath, renderAgentsBlock(policy), AGENTS_BLOCK_START, AGENTS_BLOCK_END);
 
-  return [policyPath, ownersPath, checkPath, safetyPath, agentsPath].map((p) =>
+  const skillPaths = installPackagedSkills(repoRoot);
+
+  return [policyPath, ownersPath, checkPath, safetyPath, agentsPath, ...skillPaths].map((p) =>
     path.relative(repoRoot, p),
   );
 }

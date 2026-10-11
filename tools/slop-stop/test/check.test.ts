@@ -122,6 +122,18 @@ describe('runCheck', () => {
     expect(result.findings.some((f) => f.code === 'invariant')).toBe(true);
   });
 
+  it('blocks edits to installed skills', () => {
+    const result = run({
+      diffEntries: [{ status: 'M', path: 'skills/guarded-change/SKILL.md' }],
+      patches: new Map([['skills/guarded-change/SKILL.md', '']]),
+      fileExistsAtBase: () => true,
+      fileContentAtBase: () => 'a',
+      fileContentAtHead: () => 'b',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.findings.some((f) => f.code === 'trap_guardrail')).toBe(true);
+  });
+
   it('blocks guardrail file edits', () => {
     const result = run({
       diffEntries: [{ status: 'M', path: '.github/workflows/ci.yml' }],

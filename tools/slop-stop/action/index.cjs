@@ -9378,9 +9378,8 @@ var GUARDRAIL_PATTERNS = [
   "**/CODEOWNERS",
   ".github/**",
   "**/AGENTS.md",
-  "**/CLAUDE.md",
-  ".cursor/**",
-  ".claude/**"
+  "skills/guarded-change/**",
+  "skills/slop-stop-setup/**"
 ];
 var MANIFEST_PATTERNS = [
   "**/package.json",
