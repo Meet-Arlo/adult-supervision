@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
 import type { Policy } from './policy.js';
 
 /** Consumer workflows pin this repo + tag in `uses:`; the tag must exist on GitHub. */
-export const SLOP_STOP_ACTION_REF = 'Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.2.1';
+export const SLOP_STOP_ACTION_REF = 'Meet-Arlo/adult-supervision/tools/slop-stop@slop-stop-v1.3.1';
 export const SLOP_STOP_PACKAGE = '@meet-arlo/slop-stop';
 export const SLOP_STOP_SKILLS_URL =
   'https://github.com/Meet-Arlo/adult-supervision/tree/main/skills';
@@ -171,6 +171,7 @@ ${SAFETY_CHECKOUT}
         with:
           mode: safety
           base-ref: \${{ github.event.pull_request.base.sha }}
+          base-branch: \${{ github.event.pull_request.base.ref }}
           head-ref: \${{ github.event.pull_request.head.sha }}
           head-branch: \${{ github.event.pull_request.head.ref }}
 `;
