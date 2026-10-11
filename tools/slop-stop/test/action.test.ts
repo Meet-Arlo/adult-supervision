@@ -62,6 +62,7 @@ describe('templates', () => {
     expect(safety).toMatch(/^\s+pull_request:/m);
     expect(safety).not.toContain('pull_request_target');
     expect(check).toContain('base-branch: ${{ github.event.pull_request.base.ref }}');
+    expect(safety).toContain('base-branch: ${{ github.event.pull_request.base.ref }}');
     for (const wf of [check, safety]) {
       expect(wf).toContain(`uses: ${SLOP_STOP_ACTION_REF}`);
       expect(wf).toContain('branches: [develop]');
