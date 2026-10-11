@@ -68,25 +68,25 @@ The owner does this once per app repo, then again only when the allowlist or rev
 4. Commit what `init` wrote and push it to the target branch (`main` unless the policy says otherwise).
 5. Fix every `[FAIL]` until `doctor` passes. Require a PR, one approval including a CODEOWNER, dismiss stale approvals, block force pushes, require both status checks, and turn auto-merge off. Add the two status checks **after** the workflows are on the target branch, or every PR waits on checks that never run.
 
-`init` writes `.slop-stop/policy.yml`, a marked `# slop-stop:start` block in CODEOWNERS, `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml` (pinned to a tag in this repo), and a marked `<!-- slop-stop:start -->` block in `AGENTS.md`. Re-running `init` replaces only those marked blocks.
+`init` writes `.slop-stop/policy.yml`, a marked `# slop-stop:start` block in CODEOWNERS, `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml` (pinned to a tag in this repo), a marked `<!-- slop-stop:start -->` block in `AGENTS.md`, and copies `guarded-change` and `slop-stop-setup` into `.cursor/skills/`. Re-running `init` replaces those marked blocks and those two skill folders. Other folders under `.cursor/skills/` stay put.
 
 **One policy file counts.** `--policy-file` is a draft. `init` copies it to `.slop-stop/policy.yml`, and every later command reads that path. `check` and `safety` read it from the PR **base** commit, so a new zone does nothing until that commit is on the target branch. When you re-run `init`, pass `.slop-stop/policy.yml`. A leftover draft at the repo root overwrites the canonical file.
 
 Later edits:
 
 - Builders, `deny`, `safety_check`, invariants: edit `.slop-stop/policy.yml` and open an owner PR.
-- Zones, `allow`, `escalate_to`, `owners`, `target_branch`: edit that same file, then run `npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml` so CODEOWNERS, workflows, and `AGENTS.md` refresh.
+- Zones, `allow`, `escalate_to`, `owners`, `target_branch`: edit that same file, then run `npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml` so CODEOWNERS, workflows, `AGENTS.md`, and the two skill folders refresh.
 
 ## Skills
 
-Two markdown skills. They are workflow instructions, loaded on purpose (`disable-model-invocation: true` in each file). Copy or symlink the skill folders into the place your agent reads skills. For Cursor, that is `.cursor/skills/` in the app repo, or your user skills directory. `init` does not copy the skill files. It only points `AGENTS.md` at `guarded-change`.
+Two markdown skills in [`skills`](https://github.com/Meet-Arlo/adult-supervision/tree/main/skills). They are workflow instructions, loaded on purpose (`disable-model-invocation: true` in each file). `AGENTS.md` in an app repo points any agent at that directory. `init` also copies the two folders into `.cursor/skills/` for Cursor.
 
 Use one skill per seat:
 
 | Skill | Who | When |
 |-------|-----|------|
-| [slop-stop-setup](tools/slop-stop/skills/slop-stop-setup/SKILL.md) | Owner | First install, and when zones or reviewers change |
-| [guarded-change](tools/slop-stop/skills/guarded-change/SKILL.md) | Builder | Every wording or prompt change inside a zone |
+| [slop-stop-setup](skills/slop-stop-setup/SKILL.md) | Owner | First install, and when zones or reviewers change |
+| [guarded-change](skills/guarded-change/SKILL.md) | Builder | Every wording or prompt change inside a zone |
 
 Engineers who are not in `builders` keep their normal PRs for code, CI, and infra. An engineer who is also listed as a builder still has to use the builder branch and stay inside one zone.
 
@@ -150,7 +150,7 @@ npx @meet-arlo/slop-stop init --policy-file ./draft-policy.yml
 npx @meet-arlo/slop-stop doctor
 ```
 
-Commit `.slop-stop/`, the two workflows, the CODEOWNERS block, and the `AGENTS.md` block. Push to `main`. Clear every `[FAIL]`, including both required checks.
+Commit `.slop-stop/`, the two workflows, the CODEOWNERS block, the `AGENTS.md` block, and `.cursor/skills/guarded-change` plus `.cursor/skills/slop-stop-setup`. Push to `main`. Clear every `[FAIL]`, including both required checks.
 
 **Sam loads guarded-change.** "Change the hero so it says we publish a weekly report, not a dashboard."
 

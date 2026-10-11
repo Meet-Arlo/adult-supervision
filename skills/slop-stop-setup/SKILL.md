@@ -46,6 +46,7 @@ Record what was written (init prints the list):
 - slop-stop block in the CODEOWNERS file GitHub reads (`.github/`, root, or `docs/`)
 - `.github/workflows/slop-stop-check.yml` and `.github/workflows/slop-stop-safety.yml`
 - `AGENTS.md` slop-stop block
+- `.cursor/skills/guarded-change/` and `.cursor/skills/slop-stop-setup/`
 
 Commit and push these to the target branch before the builder starts.
 
@@ -67,6 +68,6 @@ Call out `[NOT_ENFORCEABLE]` items: document them for the team; they are not aut
 
 ## Handoff to builder
 
-Tell the owner to invite each builder with **Write** access (not Admin) and share the `guarded-change` workflow doc path (`tools/slop-stop/skills/guarded-change/SKILL.md`, or wherever the team installs agent instructions).
+Tell the owner to invite each builder with **Write** access (not Admin). Builders load `guarded-change` from https://github.com/Meet-Arlo/adult-supervision/tree/main/skills. Cursor also gets a copy under `.cursor/skills/` when `init` runs.
 
 Done when `doctor` overall is PASS and each zone has a `safety_check` or documented `accept_unguarded`.

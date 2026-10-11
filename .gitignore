@@ -1,4 +1,6 @@
 node_modules/
 dist/
+# Publish copy of /skills. The source of truth is /skills.
+tools/slop-stop/skills/
 *.log
 .DS_Store
