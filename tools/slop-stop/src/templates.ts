@@ -21,8 +21,9 @@ const MAX_SKILL_TREE_DEPTH = 4;
 /** GitHub reads the first CODEOWNERS it finds, in this order. */
 const CODEOWNERS_LOCATIONS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
 
-export const AGENTS_BLOCK_START = '<!-- slop-stop:start -->';
-export const AGENTS_BLOCK_END = '<!-- slop-stop:end -->';
+/** Marks the builder guardrail block in CLAUDE.md. Older versions wrote it to AGENTS.md. */
+export const GUARDRAIL_BLOCK_START = '<!-- slop-stop:start -->';
+export const GUARDRAIL_BLOCK_END = '<!-- slop-stop:end -->';
 export const CODEOWNERS_BLOCK_START = '# slop-stop:start';
 export const CODEOWNERS_BLOCK_END = '# slop-stop:end';
 
@@ -48,9 +49,9 @@ export function renderCodeownersBlock(policy: Policy): string {
   return lines.join('\n');
 }
 
-export function renderAgentsBlock(policy: Policy): string {
+export function renderGuardrailBlock(policy: Policy): string {
   return [
-    AGENTS_BLOCK_START,
+    GUARDRAIL_BLOCK_START,
     '## slop-stop (builder guardrails)',
     '',
     'If you are making product copy or prompt changes as a **builder**, load the',
@@ -65,7 +66,7 @@ export function renderAgentsBlock(policy: Policy): string {
     `  --base-branch ${policy.target_branch} --head-ref HEAD \\`,
     '  --head-branch "$(git branch --show-current)" --pr-author YOUR_GITHUB_LOGIN',
     '```',
-    AGENTS_BLOCK_END,
+    GUARDRAIL_BLOCK_END,
     '',
   ].join('\n');
 }
@@ -245,6 +246,32 @@ function writeMergedFile(filePath: string, block: string, start: string, end: st
   fs.writeFileSync(filePath, mergeMarkedBlock(existing, block, start, end), 'utf8');
 }
 
+/**
+ * Remove the guardrail block that versions before 1.4 wrote to AGENTS.md.
+ * Deletes AGENTS.md when the block was its only content. Returns the path when it changed.
+ */
+function removeLegacyAgentsBlock(repoRoot: string): string | null {
+  const agentsPath = path.join(repoRoot, 'AGENTS.md');
+  if (!fs.existsSync(agentsPath)) {
+    return null;
+  }
+  const existing = fs.readFileSync(agentsPath, 'utf8');
+  const startIdx = existing.indexOf(GUARDRAIL_BLOCK_START);
+  const endIdx = existing.indexOf(GUARDRAIL_BLOCK_END);
+  if (startIdx === -1 || endIdx <= startIdx) {
+    return null;
+  }
+  const rest = (
+    existing.slice(0, startIdx) + existing.slice(endIdx + GUARDRAIL_BLOCK_END.length)
+  ).trim();
+  if (rest) {
+    fs.writeFileSync(agentsPath, `${rest}\n`, 'utf8');
+  } else {
+    fs.rmSync(agentsPath);
+  }
+  return agentsPath;
+}
+
 export function writeInitArtifacts(repoRoot: string, policy: Policy): string[] {
   const policyPath = path.join(repoRoot, '.slop-stop', 'policy.yml');
   fs.mkdirSync(path.dirname(policyPath), { recursive: true });
@@ -265,12 +292,20 @@ export function writeInitArtifacts(repoRoot: string, policy: Policy): string[] {
   fs.writeFileSync(checkPath, renderCheckWorkflow(policy), 'utf8');
   fs.writeFileSync(safetyPath, renderSafetyWorkflow(policy), 'utf8');
 
-  const agentsPath = path.join(repoRoot, 'AGENTS.md');
-  writeMergedFile(agentsPath, renderAgentsBlock(policy), AGENTS_BLOCK_START, AGENTS_BLOCK_END);
+  const claudePath = path.join(repoRoot, 'CLAUDE.md');
+  writeMergedFile(
+    claudePath,
+    renderGuardrailBlock(policy),
+    GUARDRAIL_BLOCK_START,
+    GUARDRAIL_BLOCK_END,
+  );
+  const legacyAgentsPath = removeLegacyAgentsBlock(repoRoot);
 
   const skillPaths = installPackagedSkills(repoRoot);
 
-  return [policyPath, ownersPath, checkPath, safetyPath, agentsPath, ...skillPaths].map((p) =>
-    path.relative(repoRoot, p),
-  );
+  const written = [policyPath, ownersPath, checkPath, safetyPath, claudePath];
+  if (legacyAgentsPath) {
+    written.push(legacyAgentsPath);
+  }
+  return [...written, ...skillPaths].map((p) => path.relative(repoRoot, p));
 }

@@ -44,7 +44,7 @@ Record what was written (init prints the list):
 - `.slop-stop/policy.yml`
 - slop-stop block in the CODEOWNERS file GitHub reads (`.github/`, root, or `docs/`)
 - `.github/workflows/slop-stop-check.yml` and `.github/workflows/slop-stop-safety.yml`
-- `AGENTS.md` slop-stop block
+- `CLAUDE.md` slop-stop block
 - `skills/guarded-change/` and `skills/slop-stop-setup/`
 
 Commit and push these to the target branch before the builder starts.

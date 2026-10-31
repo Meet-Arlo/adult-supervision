@@ -27,7 +27,7 @@ A **zone** is a named allowlist of existing files, a reviewer (`escalate_to`), a
 - the PR author login does not match the branch login, or the branch is not `slop-stop/<login>/<slug>`
 - the diff leaves the zone, hits `deny`, or touches more than one zone
 - a file is added, deleted, renamed, copied, or changes type (including binary patches)
-- the diff touches `.slop-stop/**`, `.github/**`, CODEOWNERS, `AGENTS.md`, `skills/guarded-change/**`, `skills/slop-stop-setup/**`, dependency manifests, or `.env*`
+- the diff touches `.slop-stop/**`, `.github/**`, CODEOWNERS, `CLAUDE.md`, `AGENTS.md`, `skills/guarded-change/**`, `skills/slop-stop-setup/**`, dependency manifests, or `.env*`
 - added lines hide Unicode, look like secrets, or break a zone invariant
 - a zone has neither `safety_check` nor `accept_unguarded`
 
@@ -68,18 +68,18 @@ The owner does this once per app repo, then again only when the allowlist or rev
 4. Commit what `init` wrote and push it to the target branch (`main` unless the policy says otherwise).
 5. Fix every `[FAIL]` until `doctor` passes. Require a PR, one approval including a CODEOWNER, dismiss stale approvals, block force pushes, require both status checks, and turn auto-merge off. Add the two status checks **after** the workflows are on the target branch, or every PR waits on checks that never run.
 
-`init` writes `.slop-stop/policy.yml`, a marked `# slop-stop:start` block in CODEOWNERS, `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml` (pinned to a tag in this repo), a marked `<!-- slop-stop:start -->` block in `AGENTS.md`, and copies `guarded-change` and `slop-stop-setup` into `skills/`. Re-running `init` replaces those marked blocks and those two skill folders. Other folders under `skills/` stay put.
+`init` writes `.slop-stop/policy.yml`, a marked `# slop-stop:start` block in CODEOWNERS, `.github/workflows/slop-stop-check.yml` and `slop-stop-safety.yml` (pinned to a tag in this repo), a marked `<!-- slop-stop:start -->` block in `CLAUDE.md` (it moves an old block out of `AGENTS.md`), and copies `guarded-change` and `slop-stop-setup` into `skills/`. Re-running `init` replaces those marked blocks and those two skill folders. Other folders under `skills/` stay put.
 
 **One policy file counts.** `--policy-file` is a draft. `init` copies it to `.slop-stop/policy.yml`, and every later command reads that path. `check` and `safety` read it from the PR **base** commit, so a new zone does nothing until that commit is on the target branch. When you re-run `init`, pass `.slop-stop/policy.yml`. A leftover draft at the repo root overwrites the canonical file.
 
 Later edits:
 
 - Builders, `deny`, `safety_check`, invariants: edit `.slop-stop/policy.yml` and open an owner PR.
-- Zones, `allow`, `escalate_to`, `owners`, `target_branch`: edit that same file, then run `npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml` so CODEOWNERS, workflows, `AGENTS.md`, and the two skill folders refresh.
+- Zones, `allow`, `escalate_to`, `owners`, `target_branch`: edit that same file, then run `npx @meet-arlo/slop-stop init --policy-file .slop-stop/policy.yml` so CODEOWNERS, workflows, `CLAUDE.md`, and the two skill folders refresh.
 
 ## Skills
 
-Two markdown skills in [`skills`](https://github.com/Meet-Arlo/adult-supervision/tree/main/skills). They are workflow instructions. `AGENTS.md` in an app repo points at that directory. `init` copies the two folders into `skills/` in the app repo.
+Two markdown skills in [`skills`](https://github.com/Meet-Arlo/adult-supervision/tree/main/skills). They are workflow instructions. `CLAUDE.md` in an app repo points at that directory. `init` copies the two folders into `skills/` in the app repo.
 
 Use one skill per seat:
 
@@ -154,7 +154,7 @@ npx @meet-arlo/slop-stop init --policy-file ./draft-policy.yml
 npx @meet-arlo/slop-stop doctor
 ```
 
-Commit `.slop-stop/`, the two workflows, the CODEOWNERS block, the `AGENTS.md` block, and `skills/guarded-change` plus `skills/slop-stop-setup`. Push to `main`. Clear every `[FAIL]`, including both required checks.
+Commit `.slop-stop/`, the two workflows, the CODEOWNERS block, the `CLAUDE.md` block, and `skills/guarded-change` plus `skills/slop-stop-setup`. Push to `main`. Clear every `[FAIL]`, including both required checks.
 
 **Sam loads guarded-change.** "Change the hero so it says we publish a weekly report, not a dashboard."
 

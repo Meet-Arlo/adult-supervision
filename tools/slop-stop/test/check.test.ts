@@ -146,6 +146,20 @@ describe('runCheck', () => {
     expect(result.findings.some((f) => f.code === 'trap_guardrail')).toBe(true);
   });
 
+  it('blocks edits to CLAUDE.md, which holds the builder guardrail block', () => {
+    for (const file of ['CLAUDE.md', 'apps/web/CLAUDE.md']) {
+      const result = run({
+        diffEntries: [{ status: 'M', path: file }],
+        patches: new Map([[file, '']]),
+        fileExistsAtBase: () => true,
+        fileContentAtBase: () => 'a',
+        fileContentAtHead: () => 'b',
+      });
+      expect(result.ok).toBe(false);
+      expect(result.findings.some((f) => f.code === 'trap_guardrail')).toBe(true);
+    }
+  });
+
   it('blocks file creation', () => {
     const result = run({
       diffEntries: [{ status: 'A', path: 'content/new.md' }],
