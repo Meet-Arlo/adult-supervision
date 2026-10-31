@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { parseNameStatus } from '../src/git.js';
 import { readInput, runFromActionEnv } from '../src/github-action.js';
 import {
-  AGENTS_BLOCK_END,
-  AGENTS_BLOCK_START,
+  GUARDRAIL_BLOCK_END,
+  GUARDRAIL_BLOCK_START,
   mergeMarkedBlock,
   packagedSkillsRoot,
   renderCheckWorkflow,
@@ -93,11 +93,11 @@ describe('templates', () => {
   });
 
   it('adds a block to an empty file without leading blank lines', () => {
-    const block = `${AGENTS_BLOCK_START}\nhi\n${AGENTS_BLOCK_END}\n`;
-    expect(mergeMarkedBlock('', block, AGENTS_BLOCK_START, AGENTS_BLOCK_END)).toBe(block);
+    const block = `${GUARDRAIL_BLOCK_START}\nhi\n${GUARDRAIL_BLOCK_END}\n`;
+    expect(mergeMarkedBlock('', block, GUARDRAIL_BLOCK_START, GUARDRAIL_BLOCK_END)).toBe(block);
   });
 
-  it('copies packaged skills into skills/ and points AGENTS.md at them', () => {
+  it('copies packaged skills into skills/ and points CLAUDE.md at them', () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-stop-init-'));
     const otherSkill = path.join(repo, 'skills', 'other', 'SKILL.md');
     const staleSkillFile = path.join(repo, 'skills', 'guarded-change', 'old.md');
@@ -123,8 +123,9 @@ describe('templates', () => {
       expect(fs.existsSync(staleSkillFile)).toBe(false);
       expect(fs.readFileSync(otherSkill, 'utf8')).toBe('keep\n');
 
-      const agents = fs.readFileSync(path.join(repo, 'AGENTS.md'), 'utf8');
-      expect(agents).toContain(
+      expect(written).toContain('CLAUDE.md');
+      const claude = fs.readFileSync(path.join(repo, 'CLAUDE.md'), 'utf8');
+      expect(claude).toContain(
         'https://github.com/Meet-Arlo/adult-supervision/tree/main/skills',
       );
     } finally {
@@ -132,11 +133,44 @@ describe('templates', () => {
     }
   });
 
+  it('moves an old AGENTS.md block into CLAUDE.md and keeps the rest of AGENTS.md', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-stop-init-'));
+    const oldBlock = `${GUARDRAIL_BLOCK_START}\nold\n${GUARDRAIL_BLOCK_END}\n`;
+    fs.writeFileSync(path.join(repo, 'AGENTS.md'), `# Team\n\n${oldBlock}`);
+    fs.writeFileSync(path.join(repo, 'CLAUDE.md'), '# Repo\n');
+    try {
+      const written = writeInitArtifacts(repo, policy);
+      expect(written).toContain('AGENTS.md');
+      expect(fs.readFileSync(path.join(repo, 'AGENTS.md'), 'utf8')).toBe('# Team\n');
+      const claude = fs.readFileSync(path.join(repo, 'CLAUDE.md'), 'utf8');
+      expect(claude.startsWith('# Repo\n\n')).toBe(true);
+      expect(claude).toContain(GUARDRAIL_BLOCK_START);
+      expect(claude).not.toContain('\nold\n');
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('deletes AGENTS.md when the old block was its only content', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-stop-init-'));
+    fs.writeFileSync(
+      path.join(repo, 'AGENTS.md'),
+      `${GUARDRAIL_BLOCK_START}\nold\n${GUARDRAIL_BLOCK_END}\n`,
+    );
+    try {
+      writeInitArtifacts(repo, policy);
+      expect(fs.existsSync(path.join(repo, 'AGENTS.md'))).toBe(false);
+      expect(fs.readFileSync(path.join(repo, 'CLAUDE.md'), 'utf8')).toContain(GUARDRAIL_BLOCK_START);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it('replaces only the marked block and keeps the rest of the file', () => {
-    const old = `# Team\n\n${AGENTS_BLOCK_START}\nold\n${AGENTS_BLOCK_END}\n\nfooter\n`;
-    const block = `${AGENTS_BLOCK_START}\nnew\n${AGENTS_BLOCK_END}\n`;
-    expect(mergeMarkedBlock(old, block, AGENTS_BLOCK_START, AGENTS_BLOCK_END)).toBe(
-      `# Team\n\n${AGENTS_BLOCK_START}\nnew\n${AGENTS_BLOCK_END}\n\nfooter\n`,
+    const old = `# Team\n\n${GUARDRAIL_BLOCK_START}\nold\n${GUARDRAIL_BLOCK_END}\n\nfooter\n`;
+    const block = `${GUARDRAIL_BLOCK_START}\nnew\n${GUARDRAIL_BLOCK_END}\n`;
+    expect(mergeMarkedBlock(old, block, GUARDRAIL_BLOCK_START, GUARDRAIL_BLOCK_END)).toBe(
+      `# Team\n\n${GUARDRAIL_BLOCK_START}\nnew\n${GUARDRAIL_BLOCK_END}\n\nfooter\n`,
     );
   });
 });
